@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package/flutter/physics.dart';
+import 'package:flutter/physics.dart';
 
 import 'cards.dart';
 import 'capsule_button.dart';
