@@ -1,7 +1,9 @@
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 /// 下拉刷新胶囊 —— 按字节码真值重建：
 /// ① 触发距离 = miuix_sbl_action_indeterminate_distance = **72dp**【资源】，

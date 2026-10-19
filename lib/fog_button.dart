@@ -1,6 +1,8 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 /// 滚动方向迟滞锁存：上滑累计 >16px 点亮、下滑累计 <-16px 熄灭，中间回差防抖。
 class ScrollLatch {
@@ -27,7 +29,7 @@ class ScrollLatch {
 /// 雾面按钮 —— 按字节码真值重建：
 /// ① 结构 = 开关式系统模糊(toq)：ClipOval 严格裁轮廓 + BackdropFilter + 底色隐身。
 /// ② 混色 = ColorBlendToken.l 手机档三层【字节码】：
-///    层1 #1A000000 + plusDarker
+///    层1 #1A000000 + plusDarker（CI 3.47.4 无 plusDarker，按预案降级 darken）
 ///    层2 #996C6C6C + luminosity
 ///    层3 #99060606 + softLight
 ///    各层 alpha 随亮暗 v 爬升（对应 k(boolean) 的 0→1 口径）。
@@ -190,12 +192,12 @@ class _MixLayersPainter extends CustomPainter {
     if (v <= 0.01) return;
     final rect = Offset.zero & size;
 
-    // 层1 #1A000000 × plusDarker
+    // 层1 #1A000000 × darken（plusDarker 预案降级）
     canvas.drawRect(
       rect,
       Paint()
         ..color = Color.fromARGB((0x1A * v).round(), 0, 0, 0)
-        ..blendMode = BlendMode.plusDarker, // 若编译报错：降级 BlendMode.darken
+        ..blendMode = BlendMode.darken,
     );
     // 层2 #996C6C6C × luminosity
     canvas.drawRect(
