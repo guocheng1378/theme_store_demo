@@ -7,10 +7,12 @@ on:
 
 jobs:
   android:
-    runs-on: ubuntu-latest
+    # 2026-10-19 起 ubuntu-latest 开始切 26.04，新镜像 Android 环境
+    # 可能变——失败排期阶段钉死 24.04。
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -20,16 +22,48 @@ jobs:
           channel: stable
           cache: true
       - name: Scaffold android runner
+        shell: bash
         run: |
           flutter create --project-name theme_store_demo --org com.demo /tmp/scaffold
           cp -r /tmp/scaffold/android ./android
-        shell: bash
       - name: Pub get
+        shell: bash
         run: flutter pub get
+      - name: Analyze (诊断，不阻断)
+        continue-on-error: true
         shell: bash
+        run: |
+          flutter analyze > /tmp/analyze.log 2>&1 || true
+          {
+            echo '## flutter analyze'
+            echo '```'
+            tail -n 80 /tmp/analyze.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E ' error • ' /tmp/analyze.log | head -40 | while IFS= read -r line; do
+            esc=${line//%/%%}
+            echo "::error title=analyze::${esc}"
+          done
       - name: Build APK (release)
-        run: flutter build apk --release
         shell: bash
+        run: |
+          set +e
+          flutter build apk --release > /tmp/build.log 2>&1
+          code=$?
+          set -e
+          {
+            echo '## flutter build tail'
+            echo '```'
+            tail -n 150 /tmp/build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            grep -nE 'error|Error|FAILURE|BUILD FAILED|Exception' /tmp/build.log | tail -n 40 | while IFS= read -r line; do
+              esc=${line//%/%%}
+              echo "::error title=build::${esc}"
+            done
+            exit "$code"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: theme_store_demo-apk
