@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
+import 'package/flutter/physics.dart';
 
 import 'cards.dart';
 import 'capsule_button.dart';
@@ -103,9 +103,11 @@ class _HomePageState extends State<HomePage>
                   ),
                   slivers: [
                     SliverPadding(
+                      // 内容顶距：头部 + 14dp 呼吸位（静止时 Banner 完整
+                      // 露在 chip 栏下方；滚动时内容照常从带下穿过）。
                       padding: EdgeInsets.fromLTRB(
                         16,
-                        headerExtent + 4,
+                        headerExtent + 14,
                         16,
                         16,
                       ),
