@@ -27,16 +27,19 @@ class ScrollLatch {
   }
 }
 
-/// 雾面按钮 —— 字节码真值 + 评审两轮补强（亮 / 立体）：
-/// ① 结构 = 开关式系统模糊(toq)：ClipOval 严格裁轮廓 + BackdropFilter。
-/// ② 混色 = ColorBlendToken.l 三层（层1 darken 预案降级 / 层2 luminosity /
-///    层3 softLight），alpha 随亮暗 v 爬升。
-/// ③ 阴影 = ShadowToken.f7l8 环境阴影（#59000000 / 64px）+ 贴地接触
-///    阴影（#40000000 / 10px / 下坠 4px）—— 负立体感。
-/// ④ 球面明暗层：盘内上白(0x2E) → 中透 → 下黑(0x33) 纵向渐变，
-///    模拟顶光球体——评审结论“不立体”的直接修复。
-/// ⑤ 亮化：辉光 0.40（原 0.30）、顶部高光弧白 0.55 渐隐、
-///    Bloom 描边亮0.45/暗0.15、箭头白 + 重投影(0x8A/10px)。
+/// 雾面按钮 —— 字节码真值 + 三轮评审补强：
+/// ① 结构 = 开关式系统模糊(toq)：ClipOval 裁轮廓 + BackdropFilter。
+/// ② 混色 = ColorBlendToken.l 三层（darken / luminosity / softLight），
+///    alpha 随亮暗 v 爬升；直接绘 framebuffer（不进 saveLayer）。
+/// ③ 球面明暗：上白(0x2E) → 中透 → 下黑(0x33) 顶光源。
+/// ④ 边界融合（评审“与界面有界限”）：
+///    - 黑底 + 球面层包一层径向渐隐 ShaderMask（80% 内满、100% 透），
+///      玻璃到圆周自然融入内容，不再硬边收口；
+///    - 去掉整圈 Bloom 环线（那是拿笔画的圈），只留顶部柔化反光弧
+///      + 点亮态软辉光圈（蒙版模糊，非实线）。
+/// ⑤ 浮起感（评审“没浮起来”）：环境阴影 #59000000/64px + 接触阴影
+///    #66000000/14px/下坠6px；白辉光只当氛围，不承担边界。
+/// ⑥ 图标恒白 + 重投影(0x8A/10px)。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
@@ -101,7 +104,7 @@ class _FogButtonState extends State<FogButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // ⑤ 羽化辉光：提亮 0.40 / 0.18，单侧 4 → 12dp
+                // 氛围辉光（点亮态）：软，不承担边界
                 Container(
                   width: s + 8 + 16 * v,
                   height: s + 8 + 16 * v,
@@ -117,7 +120,7 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                // ③ 阴影：环境阴影（真值 64px）+ 贴地接触阴影（立体）
+                // 浮起感：环境光晕 + 加强接触阴影（下坠 6px）
                 Container(
                   width: s,
                   height: s,
@@ -130,14 +133,14 @@ class _FogButtonState extends State<FogButton>
                         blurRadius: 64 / dpr,
                       ),
                       const BoxShadow(
-                        color: Color(0x40000000),
-                        offset: Offset(0, 4),
-                        blurRadius: 10,
+                        color: Color(0x66000000),
+                        offset: Offset(0, 6),
+                        blurRadius: 14,
                       ),
                     ],
                   ),
                 ),
-                // 雾面本体：模糊 + 混色 + 球面 + 图标 + Bloom
+                // 雾面本体
                 ClipOval(
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
@@ -147,31 +150,46 @@ class _FogButtonState extends State<FogButton>
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          // 常驻黑底：托住圆盘轮廓与箭头对比
+                          // 玻璃底 + 球面：径向渐隐收边（80% 内满 → 圆周透），
+                          // ShaderMask 只包普通 alpha 层，避开混色 saveLayer 坑
                           Positioned.fill(
-                            child: ColoredBox(color: Color(0x1F000000)),
-                          ),
-                          Positioned.fill(
-                            child: CustomPaint(painter: _MixLayersPainter(v)),
-                          ),
-                          // ④ 球面明暗：顶光 → 底部阴影，盘变“球”
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    const Color(0x2EFFFFFF),
-                                    Colors.transparent,
-                                    const Color(0x33000000),
-                                  ],
-                                  stops: const [0.0, 0.45, 1.0],
-                                ),
+                            child: ShaderMask(
+                              shaderCallback: (rect) => RadialGradient(
+                                radius: 1.0,
+                                stops: const [0.0, 0.80, 1.0],
+                                colors: [
+                                  Colors.white,
+                                  Colors.white,
+                                  Colors.transparent,
+                                ],
+                              ).createShader(rect),
+                              blendMode: BlendMode.dstIn,
+                              child: Stack(
+                                children: const [
+                                  ColoredBox(color: Color(0x1F000000)),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0x2EFFFFFF),
+                                          Colors.transparent,
+                                          Color(0x33000000),
+                                        ],
+                                        stops: [0.0, 0.45, 1.0],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          // 图标恒白 + 重投影：白更锐
+                          // 三层混色：必须直绘 framebuffer（不包 ShaderMask）
+                          Positioned.fill(
+                            child: CustomPaint(painter: _MixLayersPainter(v)),
+                          ),
+                          // 图标恒白 + 重投影
                           Icon(
                             widget.icon,
                             size: 26,
@@ -213,21 +231,18 @@ class _MixLayersPainter extends CustomPainter {
     if (v <= 0.01) return;
     final rect = Offset.zero & size;
 
-    // 层1 #1A000000 × darken（plusDarker 预案降级）
     canvas.drawRect(
       rect,
       Paint()
         ..color = Color.fromARGB((0x1A * v).round(), 0, 0, 0)
         ..blendMode = BlendMode.darken,
     );
-    // 层2 #996C6C6C × luminosity
     canvas.drawRect(
       rect,
       Paint()
         ..color = Color.fromARGB((0x99 * v).round(), 0x6C, 0x6C, 0x6C)
         ..blendMode = BlendMode.luminosity,
     );
-    // 层3 #99060606 × softLight
     canvas.drawRect(
       rect,
       Paint()
@@ -240,7 +255,8 @@ class _MixLayersPainter extends CustomPainter {
   bool shouldRepaint(_MixLayersPainter old) => old.v != v;
 }
 
-/// Bloom 三层描边：顶光高光弧（立体感）+ 环形描边亮0.45/暗0.15 + 光圈。
+/// 顶部柔和反光弧（非整圈实线——评审“与界面有界限”）
+/// + 点亮态软辉光圈。整圈 Bloom 描边已移除。
 class _BloomStrokePainter extends CustomPainter {
   _BloomStrokePainter(this.v);
 
@@ -250,40 +266,34 @@ class _BloomStrokePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final r = size.shortestSide / 2;
-    final rect = Rect.fromCircle(center: c, radius: r - 1.4);
+    final rect = Rect.fromCircle(center: c, radius: r - 1.6);
 
-    // ① 顶部高光弧：白 0.55 → 0.18 渐变压在上缘（顶光源）
+    // 顶部反光弧：柔化（宽 1.4、蒙 2px、顶点白 0.7 → 两侧退场）
     final rim = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
+      ..strokeWidth = 1.4
       ..shader = SweepGradient(
         colors: const [
-          Colors.white,
-          Color(0x55FFFFFF),
+          Color(0xB3FFFFFF),
+          Color(0x33FFFFFF),
           Color(0x00FFFFFF),
           Color(0x00FFFFFF),
-          Colors.white,
+          Color(0xB3FFFFFF),
         ],
         transform: const GradientRotation(-math.pi / 2),
       ).createShader(rect)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
     canvas.drawArc(rect, math.pi, math.pi, false, rim);
 
-    // ② 光圈（v > 0 才加宽）
+    // 点亮态软辉光圈（蒙版模糊，非实线）
     if (v > 0.02) {
       final glow = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white.withOpacity(0.40 * v)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2 + 3 * v);
+        ..color = Colors.white.withOpacity(0.35 * v)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 3 * v);
       canvas.drawCircle(c, r - 1, glow);
     }
-    // ③ Bloom 环形描边：亮态 0.45 / 暗态 0.15
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..color = Colors.white.withOpacity(0.15 + 0.30 * v);
-    canvas.drawCircle(c, r - 1.4, line);
   }
 
   @override
