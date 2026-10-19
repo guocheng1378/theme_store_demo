@@ -1,0 +1,18 @@
+name: theme_store_demo
+description: 小米主题商店首页 1:1 复刻 demo（雾面带 / chip 组 / 真底栏）。
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
