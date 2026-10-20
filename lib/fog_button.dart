@@ -5,19 +5,22 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// 雾面按钮 —— 时序三修（用户 2026-10-20 13:47 “还是没托起”定位）：
-/// ① 拖起 = **动画式拎起**，不是滚动像素映射：旧版把抬起量绑在前 40px，
-///    正常一甩就是 200px，抬起 1-2 帧内冲顶、肉眼根本看不见。
-///    现在：内容一动（px>4）立即触发拎起弹簧（320/19，约 0.3s，
-///    带微回弹）上升 -16px；回到顶部才落回。任何滑速都看得见。
+/// 雾面按钮 —— 多轮评审收敛：
+/// ① 拖起 = **动画式拎起**：内容一动（px>4）立即触发拎起弹簧
+///    （320/19，约 0.3s，末尾微回弹）上升 -16px；回顶落回。
+///    与滑速无关，快甩慢划都看得见“被拖起”。
 /// ② 变亮 = 玻璃内提亮白 + 辉光/反光弧随拎起同步走。
-/// ③ 慢雾 = 雾态另起一根**软弹簧**（55/16，约 0.6s 收敛），
-///    40px 才起步 —— 甩动时也一定是“先抬起变亮，雾再慢慢罩上”。
-/// ④ 结构 = 开关式系统模糊(toq)，三级模糊阶梯：+12px σ6 → +6px σ12
-///    → 核心 σ26，每级跳变 ≤2.2×，圆周无单步硬跳。
-/// ⑤ 混色 = ColorBlendToken.l 三层（darken/luminosity/softLight），
-///    每层径向渐变 Shader 逐像素 alpha（0.72 内满 → 圆周透），
+/// ③ 慢雾 = 软弹簧（55/16，约 0.6s），40px 才起步 ——
+///    “先抬起变亮，雾再慢慢罩上”。
+/// ④ 混色（2026-10-20 13:53 官方截图色语言修正）：
+///    官方页面深色元素（推荐选中胶囊/底栏图标）= **干净近黑**。
+///    旧三层含 luminosity(#6C6C6C) 强制抽灰度 = 浑浊发脏；
+///    现在去掉灰混，只留 darken(#000) + softLight(#030303)，
+///    深色态 = 干净透黑（能透出底下模糊内容），对齐推荐胶囊色感；
+///    每层仍径向渐变 Shader 逐像素 alpha（0.72 内满 → 圆周透），
 ///    blendMode 逐像素直绘 framebuffer —— 不进 saveLayer。
+/// ⑤ 结构 = 开关式系统模糊(toq)，三级模糊阶梯：+12σ6 → +6σ12
+///    → 核心σ26，每级跳变 ≤2.2×，圆周无单步硬跳。
 /// ⑥ 地面投影不动（#8C000000/18px/坠8 + #59000000/56px/坠5），
 ///    球起缝隙变宽 = 托起。
 /// ⑦ 图标恒白 + 重投影(0x8A/10px)。
@@ -243,7 +246,8 @@ class _FogButtonState extends State<FogButton>
                                                   ),
                                                 ),
                                               ),
-                                              // 三层混色（随雾态），直绘
+                                              // 干净深黑混色（去灰混），
+                                              // 直绘 framebuffer
                                               Positioned.fill(
                                                 child: CustomPaint(
                                                   painter:
@@ -295,7 +299,9 @@ class _FogButtonState extends State<FogButton>
   }
 }
 
-/// ColorBlendToken.l 三层混色（alpha 随雾态 fog 爬升），
+/// 混色（13:53 色语言修正）：去掉 luminosity 灰混（强制抽灰度 = 浑浊），
+/// 只留两层 —— darken(#000) 压暗 + softLight(#030303) 深邃，
+/// 深色态 = 干净透黑（贴近官方“推荐”选中胶囊），底下模糊内容可透出。
 /// 每层径向渐变 Shader 把 alpha 推到圆周归零，blendMode 逐像素直绘。
 class _MixLayersPainter extends CustomPainter {
   _MixLayersPainter(this.v);
@@ -320,10 +326,9 @@ class _MixLayersPainter extends CustomPainter {
       );
     }
 
-    blend(Color.fromARGB((0x1A * v).round(), 0, 0, 0), BlendMode.darken);
-    blend(Color.fromARGB((0x99 * v).round(), 0x6C, 0x6C, 0x6C),
-        BlendMode.luminosity);
-    blend(Color.fromARGB((0x99 * v).round(), 0x06, 0x06, 0x06),
+    // 干净压暗（对齐深色胶囊的透黑，不带灰混）
+    blend(Color.fromARGB((0x2E * v).round(), 0, 0, 0), BlendMode.darken);
+    blend(Color.fromARGB((0x99 * v).round(), 0x03, 0x03, 0x03),
         BlendMode.softLight);
   }
 
