@@ -123,7 +123,10 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：恒定雾化 + 模糊/混色底部 44px 整体羽化；
+  /// 雾面带：恒定雾化 + 模糊/混色底部 16px 整体羽化（21:30 评审
+  /// “顶部雾化感觉没了”：44px 羽化把模糊几乎整段吃在 Tab 胶囊区，
+  /// Banner 到胶囊底下是硬穿；收到 16px 后 Tab 底下仍有糊+雾，
+  /// 底缘只留一小段过渡）；
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -138,7 +141,7 @@ class _HomePageState extends State<HomePage>
                 end: Alignment.bottomCenter,
                 stops: [
                   0.0,
-                  ((rect.height - 44) / rect.height).clamp(0.0, 1.0),
+                  ((rect.height - 16) / rect.height).clamp(0.0, 1.0),
                   1.0,
                 ],
                 colors: [
@@ -168,7 +171,8 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 搜索胶囊（磨砂玻璃）：内容穿过时白描边+柔光高亮（接近度驱动）。
+  /// 搜索胶囊（磨砂玻璃）：内容穿过时白描边增亮（接近度驱动）；
+  /// 光晕/投影层已删（21:30 评审：阴影要去掉）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -182,14 +186,6 @@ class _HomePageState extends State<HomePage>
                 return Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      if (h > 0.01)
-                        BoxShadow(
-                          color: Colors.white.withOpacity(0.45 * h),
-                          blurRadius: 12,
-                          spreadRadius: 1,
-                        ),
-                    ],
                     border: Border.all(
                       color: Colors.white.withOpacity(
                         (0.10 + 0.55 * h).clamp(0.0, 1.0),
@@ -223,8 +219,10 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// chip（磨砂玻璃）：未选中=半透白玻璃透出雾底；选中=实心黑胶囊（小米选中态）；
-  /// 内容穿过时白柔光+描边增亮（与搜索/查看更多/导航条/悬浮球同源信号）。
+  /// chip（磨砂玻璃，21:30 评审改）：每颗自带 BackdropFilter 真磨砂，
+  /// 实心色改半透玻璃、光晕投影整层删除——未选中=半透白玻璃透雾底，
+  /// 选中=深色玻璃（仍是小米深色选中态，但不再实心死黑）；
+  /// 内容穿过时白描边增亮（与搜索/查看更多/导航条/悬浮球同源信号）。
   Widget _chip(int i) {
     return AnimatedBuilder(
       animation: Listenable.merge([_tabC, _prox]),
@@ -232,39 +230,37 @@ class _HomePageState extends State<HomePage>
         final t = (1 - (i - _tabC.value).abs()).clamp(0.0, 1.0).toDouble();
         final h = _prox.value;
         final bg =
-            Color.lerp(const Color(0x99FFFFFF), const Color(0xE6000000), t);
+            Color.lerp(const Color(0x7AFFFFFF), const Color(0xA6000000), t);
         final fg = Color.lerp(const Color(0xE6000000), Colors.white, t);
         return Padding(
           padding: const EdgeInsets.only(right: 8),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _tapTab(i),
-            child: Container(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.25 + 0.55 * h),
-                  width: 1,
-                ),
-                boxShadow: [
-                  if (h > 0.01)
-                    BoxShadow(
-                      color: Colors.white.withOpacity(0.40 * h),
-                      blurRadius: 9,
-                      spreadRadius: 0.5,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.25 + 0.55 * h),
+                      width: 1,
                     ),
-                ],
-              ),
-              child: Text(
-                _tabs[i],
-                style: TextStyle(
-                  fontSize: 15,
-                  color: fg,
-                  fontWeight: t >= 0.5 ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  child: Text(
+                    _tabs[i],
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: fg,
+                      fontWeight: t >= 0.5 ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
             ),
