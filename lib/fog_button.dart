@@ -19,6 +19,9 @@ import 'package:flutter/physics.dart';
 ///   这才是真机主题商店组件雾面的真实混色；奶白雾纱 0x7F→0x38
 ///   只留薄纱、白提升层 0.30→0.18，不再用白底盖住混色层
 ///   （之前的差距：整颗发“白塑料”，真机是随底色走的玻璃）。
+///   ⚠ 层1 PLUS_DARKER：Flutter BlendMode 无此枚举（07:01 CI 编译报错
+///   member not found），按 SPECS 注释约定降级 **darken**（视觉等效
+///   渐进压暗）；真值字节码保留在注释里。
 /// · 模糊羽化/三级阶梯/骑缝位置（带底 12px 缝）不变。
 class FogButton extends StatefulWidget {
   const FogButton({
@@ -354,6 +357,9 @@ class _GlassRimPainter extends CustomPainter {
 /// 主题商店组件雾面（FAB/HyperCard 等）的真实玻璃配方：
 /// 层1 0x1A000000 × PLUS_DARKER / 层2 0x996C6C6C × LUMINOSITY /
 /// 层3 0x99060606 × SOFT_LIGHT；alpha 随 v（亮/雾）爬升。
+/// ⚠ 层1：Flutter BlendMode 无 plusDarker 枚举（07:01 CI member not
+/// found），按 SPECS 注释约定降级 darken——同为“渐进压暗”，
+/// 真值字节码保留在注释里；层2/3 枚举存在，按真值走。
 /// 绘制发生在 BackdropFilter 之后的同一帧缓冲上，与模糊后的背景相混。
 class _ThemeMixPainter extends CustomPainter {
   _ThemeMixPainter(this.v);
@@ -365,12 +371,12 @@ class _ThemeMixPainter extends CustomPainter {
     if (v <= 0.01) return;
     final rect = Offset.zero & size;
 
-    // 层1 0x1A000000 × PLUS_DARKER
+    // 层1 0x1A000000 × PLUS_DARKER（降级 darken，无 plusDarker 枚举）
     canvas.drawRect(
       rect,
       Paint()
         ..color = Color.fromARGB((0x1A * v).round(), 0, 0, 0)
-        ..blendMode = BlendMode.plusDarker,
+        ..blendMode = BlendMode.darken,
     );
     // 层2 0x996C6C6C × LUMINOSITY
     canvas.drawRect(

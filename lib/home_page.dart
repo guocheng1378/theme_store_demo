@@ -465,7 +465,7 @@ class _HomePageState extends State<HomePage>
                 // 查看更多（磨砂玻璃胶囊）：内容穿过时提亮
                 AnimatedBuilder(
                   animation: _prox,
-                  builder: (context, child) {
+ builder: (context, child) {
                     final h = _prox.value;
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -532,8 +532,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 底部导航（磨砂玻璃条）：真背景模糊 + 半透明白玻璃；
-  /// 内容穿过时整条提亮（白填充/描边随 _prox 增亮 + 白柔光）。
+  /// 悬浮栏（底部导航条）——07:49 评审“把悬浮栏也做一下”：
+  /// 材质按同一套主题真值改：填充从白 0.60+0.30h（几乎实心）退到
+  /// 薄纱 0.45+0.15h，内叠 ColorBlendToken.l 三层混色
+  /// （SPECS §五，与雾面按钮同配方，强度随接近度 0.40→0.70 爬升）；
+  /// 真模糊 24、接近度白描边/光晕、托底软影保持——玻璃随底色走，
+  /// 不再是一条“白塑料”。
   Widget _bottomBar() {
     const icons = [
       Icons.format_paint,
@@ -573,46 +577,56 @@ class _HomePageState extends State<HomePage>
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: Material(
-                  color: Colors.white.withOpacity(0.60 + 0.30 * h),
+                  color: Colors.white.withOpacity(0.45 + 0.15 * h),
                   borderRadius: BorderRadius.circular(24),
                   clipBehavior: Clip.antiAlias,
-                  child: SizedBox(
-                    height: 61.3,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < labels.length; i++)
-                          Expanded(
-                            child: InkWell(
-                              onTap: () => setState(() => _nav = i),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    icons[i],
-                                    size: 22,
-                                    color: i == _nav
-                                        ? const Color(0xFF000000)
-                                        : const Color(0xCC000000),
+                  child: Stack(
+                    children: [
+                      // 悬浮栏真值三层混色（同雾面按钮配方）
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _BarMixPainter(0.40 + 0.30 * h),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 61.3,
+                        child: Row(
+                          children: [
+                            for (var i = 0; i < labels.length; i++)
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _nav = i),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        icons[i],
+                                        size: 22,
+                                        color: i == _nav
+                                            ? const Color(0xFF000000)
+                                            : const Color(0xCC000000),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        labels[i],
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: i == _nav
+                                              ? FontWeight.w700
+                                              : FontWeight.w400,
+                                          color: i == _nav
+                                              ? const Color(0xFF000000)
+                                              : const Color(0xCC000000),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    labels[i],
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: i == _nav
-                                          ? FontWeight.w700
-                                          : FontWeight.w400,
-                                      color: i == _nav
-                                          ? const Color(0xFF000000)
-                                          : const Color(0xCC000000),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                      ],
-                    ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -943,4 +957,41 @@ class _BandTintPainter extends CustomPainter {
   @override
   bool shouldRepaint(_BandTintPainter old) =>
       old.alpha != alpha || old.tint != tint;
+}
+
+/// 悬浮栏（底部导航条）真值三层混色（SPECS §五 ColorBlendToken.l，
+/// 07:49 评审“把悬浮栏也做一下”）：与雾面按钮同配方，
+/// v 随接近度 0.40→0.70 爬升；层1 PLUS_DARKER 同样降级 darken
+/// （Flutter 无 plusDarker 枚举，见 fog_button 注释）。
+class _BarMixPainter extends CustomPainter {
+  _BarMixPainter(this.v);
+
+  final double v;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (v <= 0.01) return;
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x1A * v).round(), 0, 0, 0)
+        ..blendMode = BlendMode.darken,
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x99 * v).round(), 0x6C, 0x6C, 0x6C)
+        ..blendMode = BlendMode.luminosity,
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x99 * v).round(), 0x06, 0x06, 0x06)
+        ..blendMode = BlendMode.softLight,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BarMixPainter old) => old.v != v;
 }
