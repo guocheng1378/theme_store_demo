@@ -192,8 +192,8 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 搜索胶囊（磨砂玻璃）：内容穿过时白描边增亮（接近度驱动）；
-  /// 光晕/投影层已删（21:30 评审：阴影要去掉）。
+  /// 搜索胶囊（磨砂玻璃）：内容穿过时高亮（01:07 修复“搜索不亮”）：
+  /// 描边提至子级之上 + 外白光晕 + 托起暗影，接近度驱动。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -204,17 +204,48 @@ class _HomePageState extends State<HomePage>
               animation: _prox,
               builder: (context, child) {
                 final h = _prox.value;
+                // 01:07 评审“搜索为什么不亮”：原白描边画在内层胶囊之下，
+                // 被胶囊自带投影+白底盖死（白叠白也无对比）→ 高亮改三件：
+                // 描边提至子级之上（Stack 覆盖层）+ 外白光晕 + 托起暗影。
                 return Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(
-                        (0.10 + 0.55 * h).clamp(0.0, 1.0),
-                      ),
-                      width: 1,
-                    ),
+                    boxShadow: [
+                      if (h > 0.01) ...[
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.18 * h),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withOpacity(0.55 * h),
+                          blurRadius: 14,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ],
                   ),
-                  child: child,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      child!,
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(
+                                  (0.15 + 0.70 * h).clamp(0.0, 1.0),
+                                ),
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               },
               child: CapsuleButton(
