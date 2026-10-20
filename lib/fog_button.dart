@@ -12,18 +12,12 @@ import 'package:flutter/physics.dart';
 /// ② 变亮 = 玻璃内提亮白 + 辉光/反光弧随拎起同步走。
 /// ③ 慢雾 = 软弹簧（55/16，约 0.6s），40px 才起步 ——
 ///    “先抬起变亮，雾再慢慢罩上”。
-/// ④ 混色（2026-10-20 13:53 官方截图色语言修正）：
-///    官方页面深色元素（推荐选中胶囊/底栏图标）= **干净近黑**。
-///    旧三层含 luminosity(#6C6C6C) 强制抽灰度 = 浑浊发脏；
-///    现在去掉灰混，只留 darken(#000) + softLight(#030303)，
-///    深色态 = 干净透黑（能透出底下模糊内容），对齐推荐胶囊色感；
-///    每层仍径向渐变 Shader 逐像素 alpha（0.72 内满 → 圆周透），
-///    blendMode 逐像素直绘 framebuffer —— 不进 saveLayer。
-/// ⑤ 结构 = 开关式系统模糊(toq)，三级模糊阶梯：+12σ6 → +6σ12
-///    → 核心σ26，每级跳变 ≤2.2×，圆周无单步硬跳。
-/// ⑥ 地面投影不动（#8C000000/18px/坠8 + #59000000/56px/坠5），
-///    球起缝隙变宽 = 托起。
-/// ⑦ 图标恒白 + 重投影(0x8A/10px)。
+/// ④ 混色 = 干净透黑（去 luminosity 灰混），对齐官方“推荐”胶囊。
+/// ⑤ 模糊边界羽化（14:24 “界限太明显”）：外层 σ6 的 ClipOval 是硬切，
+///    现用 ShaderMask(dstIn) 径向把模糊结果在球缘外 8px 内淡出 ——
+///    内容从清晰 → 渐糊平滑穿过，按钮与雾之间没有硬线。
+/// ⑥ 结构 = 三级模糊阶梯：+12px σ6 → +6px σ12 → 核心 σ26。
+/// ⑦ 地面投影不动，球起缝隙变宽 = 托起；图标恒白 + 重投影。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
@@ -45,10 +39,8 @@ class FogButton extends StatefulWidget {
 
 class _FogButtonState extends State<FogButton>
     with SingleTickerProviderStateMixin {
-  // 慢雾：软弹簧，约 0.6s 收敛 —— “然后慢慢模糊”。
   static const _fogSpring =
       SpringDescription(mass: 1, stiffness: 55, damping: 16);
-  // 拎起：快、带微回弹（阻尼比≈0.53，超调 ~12%）—— “被拖起”。
   static const _liftSpring =
       SpringDescription(mass: 1, stiffness: 320, damping: 19);
 
@@ -101,7 +93,6 @@ class _FogButtonState extends State<FogButton>
       child: AnimatedBuilder(
         animation: Listenable.merge([_c, _liftC, widget.scrollListenable]),
         builder: (context, _) {
-          // 拎起值（弹簧可超调到 ~1.12，上升末尾有回弹）
           final double lift = _liftC.value;
           final double bright = lift.clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
@@ -156,126 +147,140 @@ class _FogButtonState extends State<FogButton>
                   child: SizedBox(
                     width: s + 24,
                     height: s + 24,
-                    // 三级模糊阶梯：+12σ6 → +6σ12 → 核心σ26
+                    // 外圈模糊径向羽化：球缘外 8px 内淡出，消灭硬切线
                     child: ClipOval(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                        child: SizedBox(
-                          width: s + 24,
-                          height: s + 24,
-                          child: Center(
-                            child: ClipOval(
-                              child: BackdropFilter(
-                                filter:
-                                    ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                                child: SizedBox(
-                                  width: s + 12,
-                                  height: s + 12,
-                                  child: Center(
-                                    child: ClipOval(
-                                      child: BackdropFilter(
-                                        filter: ImageFilter.blur(
-                                            sigmaX: 26, sigmaY: 26),
-                                        child: SizedBox(
-                                          width: s,
-                                          height: s,
-                                          child: Stack(
-                                            alignment: Alignment.center,
-                                            children: [
-                                              // 玻璃底 + 提亮白 + 球面：
-                                              // 径向渐隐收边（0.72 内满）
-                                              Positioned.fill(
-                                                child: ShaderMask(
-                                                  shaderCallback: (rect) =>
-                                                      RadialGradient(
-                                                    radius: 1.0,
-                                                    stops: const [
-                                                      0.0,
-                                                      0.72,
-                                                      1.0
-                                                    ],
-                                                    colors: [
-                                                      Colors.white,
-                                                      Colors.white,
-                                                      Colors.transparent,
-                                                    ],
-                                                  ).createShader(rect),
-                                                  blendMode: BlendMode.dstIn,
-                                                  child: Stack(
-                                                    children: [
-                                                      const ColoredBox(
-                                                        color:
-                                                            Color(0x1F000000),
-                                                      ),
-                                                      ColoredBox(
-                                                        color: Colors.white
-                                                            .withOpacity(
-                                                          0.30 *
-                                                              bright *
-                                                              (1 -
-                                                                  0.75 *
-                                                                      fog),
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (rect) => RadialGradient(
+                          radius: 1.0,
+                          stops: const [0.0, 0.80, 1.0],
+                          colors: [
+                            Colors.white,
+                            Colors.white,
+                            Colors.transparent,
+                          ],
+                        ).createShader(rect),
+                        // 三级模糊阶梯：+12σ6 → +6σ12 → 核心σ26
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                          child: SizedBox(
+                            width: s + 24,
+                            height: s + 24,
+                            child: Center(
+                              child: ClipOval(
+                                child: BackdropFilter(
+                                  filter:
+                                      ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                  child: SizedBox(
+                                    width: s + 12,
+                                    height: s + 12,
+                                    child: Center(
+                                      child: ClipOval(
+                                        child: BackdropFilter(
+                                          filter: ImageFilter.blur(
+                                              sigmaX: 26, sigmaY: 26),
+                                          child: SizedBox(
+                                            width: s,
+                                            height: s,
+                                            child: Stack(
+                                              alignment: Alignment.center,
+                                              children: [
+                                                // 玻璃底 + 提亮白 + 球面：
+                                                // 径向渐隐收边（0.72 内满）
+                                                Positioned.fill(
+                                                  child: ShaderMask(
+                                                    shaderCallback: (rect) =>
+                                                        RadialGradient(
+                                                      radius: 1.0,
+                                                      stops: const [
+                                                        0.0,
+                                                        0.72,
+                                                        1.0
+                                                      ],
+                                                      colors: [
+                                                        Colors.white,
+                                                        Colors.white,
+                                                        Colors.transparent,
+                                                      ],
+                                                    ).createShader(rect),
+                                                    blendMode: BlendMode.dstIn,
+                                                    child: Stack(
+                                                      children: [
+                                                        const ColoredBox(
+                                                          color:
+                                                              Color(0x1F000000),
                                                         ),
-                                                      ),
-                                                      const DecoratedBox(
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          gradient:
-                                                              LinearGradient(
-                                                            begin: Alignment
-                                                                .topCenter,
-                                                            end: Alignment
-                                                                .bottomCenter,
-                                                            colors: [
-                                                              Color(
-                                                                  0x2EFFFFFF),
-                                                              Colors
-                                                                  .transparent,
-                                                              Color(
-                                                                  0x33000000),
-                                                            ],
-                                                            stops: [
-                                                              0.0,
-                                                              0.45,
-                                                              1.0
-                                                            ],
+                                                        ColoredBox(
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                            0.30 *
+                                                                bright *
+                                                                (1 -
+                                                                    0.75 *
+                                                                        fog),
                                                           ),
                                                         ),
-                                                      ),
-                                                    ],
+                                                        const DecoratedBox(
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            gradient:
+                                                                LinearGradient(
+                                                              begin: Alignment
+                                                                  .topCenter,
+                                                              end: Alignment
+                                                                  .bottomCenter,
+                                                              colors: [
+                                                                Color(
+                                                                    0x2EFFFFFF),
+                                                                Colors
+                                                                    .transparent,
+                                                                Color(
+                                                                    0x33000000),
+                                                              ],
+                                                              stops: [
+                                                                0.0,
+                                                                0.45,
+                                                                1.0
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              // 干净深黑混色（去灰混），
-                                              // 直绘 framebuffer
-                                              Positioned.fill(
-                                                child: CustomPaint(
-                                                  painter:
-                                                      _MixLayersPainter(fog),
-                                                ),
-                                              ),
-                                              // 图标恒白 + 重投影
-                                              Icon(
-                                                widget.icon,
-                                                size: 26,
-                                                color: Colors.white,
-                                                shadows: const [
-                                                  Shadow(
-                                                    color: Color(0x8A000000),
-                                                    blurRadius: 10,
-                                                    offset: Offset(0, 2),
-                                                  ),
-                                                ],
-                                              ),
-                                              Positioned.fill(
-                                                child: CustomPaint(
-                                                  painter: _BloomStrokePainter(
-                                                    bright: bright,
-                                                    fog: fog,
+                                                // 干净深黑混色（去灰混），
+                                                // 直绘 framebuffer
+                                                Positioned.fill(
+                                                  child: CustomPaint(
+                                                    painter:
+                                                        _MixLayersPainter(fog),
                                                   ),
                                                 ),
-                                              ),
-                                            ],
+                                                // 图标恒白 + 重投影
+                                                Icon(
+                                                  widget.icon,
+                                                  size: 26,
+                                                  color: Colors.white,
+                                                  shadows: const [
+                                                    Shadow(
+                                                      color: Color(0x8A000000),
+                                                      blurRadius: 10,
+                                                      offset: Offset(0, 2),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Positioned.fill(
+                                                  child: CustomPaint(
+                                                    painter:
+                                                        _BloomStrokePainter(
+                                                      bright: bright,
+                                                      fog: fog,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -299,10 +304,9 @@ class _FogButtonState extends State<FogButton>
   }
 }
 
-/// 混色（13:53 色语言修正）：去掉 luminosity 灰混（强制抽灰度 = 浑浊），
-/// 只留两层 —— darken(#000) 压暗 + softLight(#030303) 深邃，
-/// 深色态 = 干净透黑（贴近官方“推荐”选中胶囊），底下模糊内容可透出。
-/// 每层径向渐变 Shader 把 alpha 推到圆周归零，blendMode 逐像素直绘。
+/// 混色：去掉 luminosity 灰混（强制抽灰度 = 浑浊），只留两层 ——
+/// darken(#000) 压暗 + softLight(#030303) 深邃，深色态 = 干净透黑，
+/// 贴近官方“推荐”选中胶囊，底下模糊内容可透出。
 class _MixLayersPainter extends CustomPainter {
   _MixLayersPainter(this.v);
 
@@ -326,7 +330,6 @@ class _MixLayersPainter extends CustomPainter {
       );
     }
 
-    // 干净压暗（对齐深色胶囊的透黑，不带灰混）
     blend(Color.fromARGB((0x2E * v).round(), 0, 0, 0), BlendMode.darken);
     blend(Color.fromARGB((0x99 * v).round(), 0x03, 0x03, 0x03),
         BlendMode.softLight);
@@ -336,8 +339,7 @@ class _MixLayersPainter extends CustomPainter {
   bool shouldRepaint(_MixLayersPainter old) => old.v != v;
 }
 
-/// 顶部柔化反光弧 + 软辉光圈：强度随“亮”起、被“雾”压，
-/// 整圈实线环已移除（评审“界限”）。
+/// 顶部柔化反光弧 + 软辉光圈：强度随“亮”起、被“雾”压。
 class _BloomStrokePainter extends CustomPainter {
   _BloomStrokePainter({required this.bright, required this.fog});
 

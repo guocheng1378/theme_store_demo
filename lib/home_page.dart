@@ -113,7 +113,7 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 雾面带：**恒定雾化**，永不随滚动渐入（对照官方结构）。
+          // 雾面带：恒定雾化 + 模糊羽化（2026-10-20 14:24 修“界限太明显”）。
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
         ],
       ),
@@ -125,39 +125,61 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带（结构性修正，用户 13:47 “还是整块蒙版的感觉”）：
-  /// 旧版 σ/tint 随滚动 8-48px 渐入 —— 任何“矩形随滚动变浓”都会被
-  /// 读成“整块蒙版被拖上来”。官方的做法是**带恒定存在、内容一直从
-  /// 带下穿过**（静止时搜索栏后面就是被糊的彩色内容），没有渐入事件。
-  /// 现在：σ30 + blurbgmix #6B6B6B@0.651 恒定开启；静止时带下是页面
-  /// 纯色底（softLight 对浅底近零变化 = 看不出痕迹），内容上滑穿过
-  /// 带下时被实时模糊 —— 没有渐入，就没有“拖蒙版”的读感。
-  /// 底部 32px 渐隐收边与下方内容无缝。
+  /// 雾面带：
+  /// · 恒定雾化（无渐入事件 = 无“拖蒙版”读感），内容实时穿带。
+  /// · **模糊羽化**：旧版混色有羽化但模糊被 ClipRect 硬切 —— 色渐隐、
+  ///   糊不渐隐，那条硬边就是“太明显的界限”。现改为 ShaderMask(dstIn)
+  ///   把【模糊结果 + 混色】整体在底部 44px 内同步淡出，内容从清晰
+  ///   → 渐糊平滑穿过，硬线消失。
+  /// · 搜索/chips 画在羽化层之上，保持清晰不被 mask 淡化。
   Widget _fogHeader() {
     return ClipRect(
-      child: BackdropFilter(
-        key: const Key('fog-band-blur'),
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Stack(
-          children: [
-            // 混色层：softLight + 渐隐 shader，单次 drawRect 直绘。
-            // 不包 ShaderMask（saveLayer 会让 blend 打空、且会破坏
-            // BackdropFilter 采样），渐隐和混色在同一个 Paint 里完成。
-            Positioned.fill(
-              child: CustomPaint(
-                key: const Key('fog-band'),
-                painter: _BandTintPainter(0.651, 32),
+      child: Stack(
+        children: [
+          // 模糊+混色层：整体被底部渐变 mask 淡出
+          SizedBox.expand(
+            child: ShaderMask(
+              key: const Key('fog-band-blur'),
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (rect) => LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [
+                  0.0,
+                  ((rect.height - 44) / rect.height).clamp(0.0, 1.0),
+                  1.0,
+                ],
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.transparent,
+                ],
+              ).createShader(rect),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Stack(
+                  children: [
+                    // 混色层：softLight 平涂（羽化交给上面的 mask）
+                    Positioned.fill(
+                      child: CustomPaint(
+                        key: const Key('fog-band'),
+                        painter: _BandTintPainter(0.651),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            SafeArea(
-              bottom: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [_searchBar(), _tabBar()],
-              ),
+          ),
+          // 清晰内容层：搜索 + chips 不受羽化影响
+          SafeArea(
+            bottom: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [_searchBar(), _tabBar()],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -665,39 +687,31 @@ class _WidgetCard extends StatelessWidget {
 }
 
 /// blurbgmix 混色层：#6B6B6B（平涂）以 softLight 混进模糊后的背景，
-/// 恒定 alpha 0.651；底部 feather px 用 shader alpha 渐隐收边。
-/// 整个效果在一次 drawRect 里完成——不开 saveLayer，不破坏 BackdropFilter
-/// 对页面的采样，也不触发 blend 打空。浅底近零变化（看不出痕迹），
-/// 深色内容穿过时自然显影。
+/// 恒定 alpha 0.651；羽化交由外层 ShaderMask 对【模糊+混色】整体淡出
+/// （旧版只羽化色、糊被硬切 = “界限太明显”）。
 class _BandTintPainter extends CustomPainter {
-  _BandTintPainter(this.alpha, this.feather);
+  _BandTintPainter(this.alpha);
 
   final double alpha; // 恒定 0.651（随带一起常开）
-  final double feather; // 底部渐隐像素
 
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     const base = Color(0xFF6B6B6B);
-    final h = size.height;
-    final stop =
-        ((h - feather) / h).clamp(0.0, 1.0).toDouble();
     final paint = Paint()
       ..blendMode = BlendMode.softLight // 混进模糊，不是盖一层
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        stops: [0, stop, 1],
+        stops: const [0, 1],
         colors: [
           base.withValues(alpha: alpha),
           base.withValues(alpha: alpha),
-          base.withValues(alpha: 0), // 底部收边：与下方内容无缝
         ],
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, paint);
   }
 
   @override
-  bool shouldRepaint(_BandTintPainter old) =>
-      old.alpha != alpha || old.feather != feather;
+  bool shouldRepaint(_BandTintPainter old) => old.alpha != alpha;
 }
