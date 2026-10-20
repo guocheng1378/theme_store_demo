@@ -14,6 +14,11 @@ import 'package:flutter/physics.dart';
 /// ③ 退出 = 入场逆放；胶囊色 #D9FFFFFF【资源】。
 /// ④ topOffset：胶囊起始 Y（头部方案下传头部高度，从雾面带下缘探出）。
 /// ⑤ 两个 AnimationController（_c/_e）→ 必须 TickerProviderStateMixin。
+/// ⑥ 评审“与界面有界限/没浮起来”补强：
+///    - 去掉 Border.all 白描边（手画的圈）；
+///    - 双层羽化：外圈(+6px) σ8 过渡环 → 内圈 σ22 主糊，模糊不再刀切；
+///    - 投影两层加码：#3D000000/16px/坠6 + #1A000000/30px/坠10，
+///      独立投影层绘制（不进遮罩，阴影完整）。
 class RefreshCapsule extends StatefulWidget {
   const RefreshCapsule({
     super.key,
@@ -155,25 +160,14 @@ class RefreshCapsuleState extends State<RefreshCapsule>
 
   Widget _capsule(double h, double w,
       {required bool showSpinner, double scale = 1}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(h / 2),
+    final r = h / 2;
+    final body = ClipRRect(
+      borderRadius: BorderRadius.circular(r),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: SizedBox(
           width: w,
           height: h,
-          decoration: BoxDecoration(
-            color: const Color(0xD9FFFFFF), // 真值 #D9FFFFFF
-            borderRadius: BorderRadius.circular(h / 2),
-            border: Border.all(color: Colors.white.withOpacity(0.65)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
           child: Center(
             child: showSpinner
                 ? const CupertinoActivityIndicator(radius: 7)
@@ -188,6 +182,64 @@ class RefreshCapsuleState extends State<RefreshCapsule>
           ),
         ),
       ),
+    );
+
+    return Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        // 独立投影层（不进遮罩，阴影完整；两层加码 = 浮起感）
+        Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.24),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+        ),
+        // 羽化外圈：+6px σ8 过渡环，模糊不再刀切（去描边后的边界融合）
+        SizedBox(
+          width: w + 12,
+          height: h + 12,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular((h + 12) / 2),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: SizedBox(
+                width: w + 12,
+                height: h + 12,
+                child: Center(child: body),
+              ),
+            ),
+          ),
+        ),
+        // 主体：真值 #D9FFFFFF 平色（描边已删）
+        SizedBox(
+          width: w,
+          height: h,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(r),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+              child: Container(
+                color: const Color(0xD9FFFFFF), // 真值 #D9FFFFFF
+                child: body,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
