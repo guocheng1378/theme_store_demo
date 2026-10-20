@@ -22,9 +22,7 @@ class _HomePageState extends State<HomePage>
     // 两个 AnimationController（_tabC/_enterC），必须多 ticker
     with TickerProviderStateMixin {
   final _sc = ScrollController();
-  // 雾面带浮现进度 0..1（8px 起步、48px 满 —— 晚于按钮，不抢戏）。
-  final _band = ValueNotifier<double>(0);
-  // 按钮用滚动像素自行拆 lift/bright（0-40px）与 fog（40-130px）。
+  // 按钮用滚动像素自行拆拎起（px>4 触发）与慢雾（40-130px）。
   final _fabPx = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
@@ -53,7 +51,6 @@ class _HomePageState extends State<HomePage>
     _tabC.dispose();
     _enterC.dispose();
     _sc.dispose();
-    _band.dispose();
     _fabPx.dispose();
     super.dispose();
   }
@@ -89,13 +86,8 @@ class _HomePageState extends State<HomePage>
                 await Future<void>.delayed(const Duration(milliseconds: 1200));
               },
               child: NotificationListener<ScrollNotification>(
-                // 时序：内容先走 → 按钮 0-40px 拖起变亮 → 40-130px 慢雾
-                // → 顶带 8-48px 晚跟（不能读成“整块蒙版被拖上来”）。
                 onNotification: (n) {
                   final px = n.metrics.pixels;
-                  // 顶带进度：8px 起步、48px 满；负过冲（下拉）钳 0。
-                  _band.value =
-                      ((px - 8) / 40).clamp(0.0, 1.0).toDouble();
                   _fabPx.value = px < 0 ? 0.0 : px;
                   return false;
                 },
@@ -121,7 +113,7 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 雾面带：状态栏 → chip 栏底，随滚动晚跟渐入（顶部透明）。
+          // 雾面带：**恒定雾化**，永不随滚动渐入（对照官方结构）。
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
         ],
       ),
@@ -133,53 +125,40 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：σ30 跟手渐入 + blurbgmix 混色。
-  /// 真值口径（对照参考包资产核过）：`miuixappcompatblurbgmix_color`
-  /// #6B6B6B alpha 0.651×t 是「往模糊里混色」（blendMode.softLight 直绘
-  /// framebuffer），不是透明度平涂盖一层——之前按普通 alpha 叠，浅色
-  /// 页面上就是一块灰板，一眼一条痕迹。混进模糊后：浅底几乎无感、深色
-  /// 内容自然显影，即「看不出痕迹」；底部 32px 渐隐收边双保险。
+  /// 雾面带（结构性修正，用户 13:47 “还是整块蒙版的感觉”）：
+  /// 旧版 σ/tint 随滚动 8-48px 渐入 —— 任何“矩形随滚动变浓”都会被
+  /// 读成“整块蒙版被拖上来”。官方的做法是**带恒定存在、内容一直从
+  /// 带下穿过**（静止时搜索栏后面就是被糊的彩色内容），没有渐入事件。
+  /// 现在：σ30 + blurbgmix #6B6B6B@0.651 恒定开启；静止时带下是页面
+  /// 纯色底（softLight 对浅底近零变化 = 看不出痕迹），内容上滑穿过
+  /// 带下时被实时模糊 —— 没有渐入，就没有“拖蒙版”的读感。
+  /// 底部 32px 渐隐收边与下方内容无缝。
   Widget _fogHeader() {
-    return ValueListenableBuilder<double>(
-      valueListenable: _band,
-      builder: (context, t, _) {
-        // 顶部零合成：跳过 BackdropFilter，搜索/chip 直接浮于页面底色
-        if (t <= 0.005) {
-          return SafeArea(
-            bottom: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [_searchBar(), _tabBar()],
+    return ClipRect(
+      child: BackdropFilter(
+        key: const Key('fog-band-blur'),
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: Stack(
+          children: [
+            // 混色层：softLight + 渐隐 shader，单次 drawRect 直绘。
+            // 不包 ShaderMask（saveLayer 会让 blend 打空、且会破坏
+            // BackdropFilter 采样），渐隐和混色在同一个 Paint 里完成。
+            Positioned.fill(
+              child: CustomPaint(
+                key: const Key('fog-band'),
+                painter: _BandTintPainter(0.651, 32),
+              ),
             ),
-          );
-        }
-        return ClipRect(
-          child: BackdropFilter(
-            key: const Key('fog-band-blur'),
-            filter: ImageFilter.blur(sigmaX: 30 * t, sigmaY: 30 * t),
-            child: Stack(
-              children: [
-                // 混色层：softLight + 渐隐 shader，单次 drawRect 直绘。
-                // 不包 ShaderMask（saveLayer 会让 blend 打空、且会破坏
-                // BackdropFilter 采样），渐隐和混色在同一个 Paint 里完成。
-                Positioned.fill(
-                  child: CustomPaint(
-                    key: const Key('fog-band'),
-                    painter: _BandTintPainter(0.651 * t, 32),
-                  ),
-                ),
-                SafeArea(
-                  bottom: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [_searchBar(), _tabBar()],
-                  ),
-                ),
-              ],
+            SafeArea(
+              bottom: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [_searchBar(), _tabBar()],
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
@@ -686,13 +665,14 @@ class _WidgetCard extends StatelessWidget {
 }
 
 /// blurbgmix 混色层：#6B6B6B（平涂）以 softLight 混进模糊后的背景，
-/// alpha = 0.651×t 跟手爬升；底部 feather px 用 shader alpha 渐隐收边。
+/// 恒定 alpha 0.651；底部 feather px 用 shader alpha 渐隐收边。
 /// 整个效果在一次 drawRect 里完成——不开 saveLayer，不破坏 BackdropFilter
-/// 对页面的采样，也不触发 blend 打空。
+/// 对页面的采样，也不触发 blend 打空。浅底近零变化（看不出痕迹），
+/// 深色内容穿过时自然显影。
 class _BandTintPainter extends CustomPainter {
   _BandTintPainter(this.alpha, this.feather);
 
-  final double alpha; // 0..1，调用方已乘滚动进度 t
+  final double alpha; // 恒定 0.651（随带一起常开）
   final double feather; // 底部渐隐像素
 
   @override

@@ -5,23 +5,22 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// 雾面按钮 —— 时序按用户 2026-10-20 描述重排：
-/// “界面滑上去 → 按钮被拖起变亮 → 然后慢慢模糊”，
-/// 顶带要晚于按钮，不能读成“整块蒙版被拖上来”。
-/// ① 拖起：滚动 0→40px 线性上提 -12px（内容滑、按钮被拎起），
-///    阴影留在地面 → 缝隙变宽 = 升起感（不再用二元 latch 硬跳）。
-/// ② 变亮：同 0→40px 玻璃内白提升（0.30）+ 辉光/反光弧同步起，
-///    按钮先“亮起来”。
-/// ③ 慢慢模糊：雾态目标 = clamp((px-40)/90)，从 40px 才开始、90px
-///    走完，且用软弹簧（90/20，临界阻尼 ≈0.4s 收敛）跟随，
-///    “亮起 → 后慢雾”两段式；回滑自动逆放。
+/// 雾面按钮 —— 时序三修（用户 2026-10-20 13:47 “还是没托起”定位）：
+/// ① 拖起 = **动画式拎起**，不是滚动像素映射：旧版把抬起量绑在前 40px，
+///    正常一甩就是 200px，抬起 1-2 帧内冲顶、肉眼根本看不见。
+///    现在：内容一动（px>4）立即触发拎起弹簧（320/19，约 0.3s，
+///    带微回弹）上升 -16px；回到顶部才落回。任何滑速都看得见。
+/// ② 变亮 = 玻璃内提亮白 + 辉光/反光弧随拎起同步走。
+/// ③ 慢雾 = 雾态另起一根**软弹簧**（55/16，约 0.6s 收敛），
+///    40px 才起步 —— 甩动时也一定是“先抬起变亮，雾再慢慢罩上”。
 /// ④ 结构 = 开关式系统模糊(toq)，三级模糊阶梯：+12px σ6 → +6px σ12
 ///    → 核心 σ26，每级跳变 ≤2.2×，圆周无单步硬跳。
 /// ⑤ 混色 = ColorBlendToken.l 三层（darken/luminosity/softLight），
 ///    每层径向渐变 Shader 逐像素 alpha（0.72 内满 → 圆周透），
 ///    blendMode 逐像素直绘 framebuffer —— 不进 saveLayer。
-/// ⑥ 球面明暗 + 地面投影（#8C000000/18px/坠8 + #59000000/56px/坠5）。
-/// ⑦ 图标恒白 + 重投影(0x8A/10px)；顶部反光弧 1.2px 柔化。
+/// ⑥ 地面投影不动（#8C000000/18px/坠8 + #59000000/56px/坠5），
+///    球起缝隙变宽 = 托起。
+/// ⑦ 图标恒白 + 重投影(0x8A/10px)。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
@@ -31,7 +30,7 @@ class FogButton extends StatefulWidget {
     this.icon = Icons.arrow_upward,
   });
 
-  /// 滚动像素（非负）。内部拆成 lift/bright（0-40px）与 fog（40-130px）。
+  /// 滚动像素（非负）。px>4 触发拎起；fog = clamp((px-40)/90)。
   final ValueListenable<double> scrollListenable;
   final VoidCallback? onTap;
   final double size;
@@ -43,12 +42,17 @@ class FogButton extends StatefulWidget {
 
 class _FogButtonState extends State<FogButton>
     with SingleTickerProviderStateMixin {
-  // 软弹簧：临界阻尼、约 0.4s 收敛 —— “慢慢模糊”的手感来源。
+  // 慢雾：软弹簧，约 0.6s 收敛 —— “然后慢慢模糊”。
   static const _fogSpring =
-      SpringDescription(mass: 1, stiffness: 90, damping: 20);
+      SpringDescription(mass: 1, stiffness: 55, damping: 16);
+  // 拎起：快、带微回弹（阻尼比≈0.53，超调 ~12%）—— “被拖起”。
+  static const _liftSpring =
+      SpringDescription(mass: 1, stiffness: 320, damping: 19);
 
   late final AnimationController _c = AnimationController(vsync: this);
+  late final AnimationController _liftC = AnimationController(vsync: this);
   double _target = 0;
+  bool _lifted = false;
 
   @override
   void initState() {
@@ -58,20 +62,30 @@ class _FogButtonState extends State<FogButton>
   }
 
   void _onScroll() {
-    final t = ((widget.scrollListenable.value - 40) / 90)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final px = widget.scrollListenable.value;
+    // 拎起：内容一动立即拎（回顶落回），与滑速无关
+    final up = px > 4;
+    if (up != _lifted) {
+      _lifted = up;
+      _liftC.animateWith(SpringSimulation(
+        _liftSpring,
+        _liftC.value,
+        up ? 1.0 : 0.0,
+        _liftC.velocity,
+      ));
+    }
+    // 慢雾：40px 才起步，软弹簧慢慢跟
+    final t = ((px - 40) / 90).clamp(0.0, 1.0).toDouble();
     if ((t - _target).abs() < 0.003) return;
     _target = t;
-    _c.animateWith(
-      SpringSimulation(_fogSpring, _c.value, t, _c.velocity),
-    );
+    _c.animateWith(SpringSimulation(_fogSpring, _c.value, t, _c.velocity));
   }
 
   @override
   void dispose() {
     widget.scrollListenable.removeListener(_onScroll);
     _c.dispose();
+    _liftC.dispose();
     super.dispose();
   }
 
@@ -82,15 +96,12 @@ class _FogButtonState extends State<FogButton>
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedBuilder(
-        animation: Listenable.merge([_c, widget.scrollListenable]),
+        animation: Listenable.merge([_c, _liftC, widget.scrollListenable]),
         builder: (context, _) {
-          final double px = widget.scrollListenable.value;
-          // 拖起 + 变亮：0→40px 即时跟随（内容滑、按钮被拎起）
-          final double lift = (px / 40).clamp(0.0, 1.0).toDouble();
-          final double bright = lift;
-          // 慢雾：40px 起步，软弹簧慢慢跟
+          // 拎起值（弹簧可超调到 ~1.12，上升末尾有回弹）
+          final double lift = _liftC.value;
+          final double bright = lift.clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
-          // 亮度被雾接管：亮起后随雾加深逐渐收回
           final double glow = bright * (1 - 0.6 * fog);
 
           return SizedBox(
@@ -100,7 +111,7 @@ class _FogButtonState extends State<FogButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 氛围辉光：随“变亮”起来、被雾慢慢吹淡
+                // 氛围辉光：随拎起变亮，被雾慢慢吹淡
                 Container(
                   width: s + 8 + 14 * bright,
                   height: s + 8 + 14 * bright,
@@ -116,7 +127,7 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                // 地面投影：阴影不动，球起缝隙变宽 = 升起感
+                // 地面投影：阴影不动，球起缝隙变宽 = 托起
                 Container(
                   width: s,
                   height: s,
@@ -136,9 +147,9 @@ class _FogButtonState extends State<FogButton>
                     ],
                   ),
                 ),
-                // 拖起：整体上提 -12px·lift（阴影留地面）
+                // 拎起：整体上提 -16px·lift（可微超调，末尾回弹）
                 Transform.translate(
-                  offset: Offset(0, -12 * lift),
+                  offset: Offset(0, -16 * lift),
                   child: SizedBox(
                     width: s + 24,
                     height: s + 24,
@@ -193,8 +204,6 @@ class _FogButtonState extends State<FogButton>
                                                         color:
                                                             Color(0x1F000000),
                                                       ),
-                                                      // 变亮层：随 lift 起、
-                                                      // 被 fog 收回
                                                       ColoredBox(
                                                         color: Colors.white
                                                             .withOpacity(
