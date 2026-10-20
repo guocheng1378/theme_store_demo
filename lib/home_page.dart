@@ -692,22 +692,32 @@ class _BandTintPainter extends CustomPainter {
 
   final double alpha;
 
+  /// 雾面着色：奶白提亮层 + 极轻灰软光层。
+  /// 旧版单层 #6B6B6B 深灰 softLight 是单向压暗——彩色内容上像雾，
+  /// 浅色页面上被压成灰黑带（用户反馈“雾面黑”）。现在先用白色
+  /// normal 层把底提亮，再叠 30% 强度的灰 softLight 保留玻璃深度。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
+    final rect = Offset.zero & size;
+    // 1) 奶白雾：normal 白层，浅色底上不再发黑
+    final milk = Paint()
+      ..color = Colors.white.withValues(alpha: 0.55 * alpha);
+    canvas.drawRect(rect, milk);
+    // 2) 玻璃深度：极轻灰 softLight（强度从 1.0 降到 0.30）
     const base = Color(0xFF6B6B6B);
-    final paint = Paint()
+    final depth = Paint()
       ..blendMode = BlendMode.softLight
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         stops: const [0, 1],
         colors: [
-          base.withValues(alpha: alpha),
-          base.withValues(alpha: alpha),
+          base.withValues(alpha: 0.30 * alpha),
+          base.withValues(alpha: 0.30 * alpha),
         ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, paint);
+      ).createShader(rect);
+    canvas.drawRect(rect, depth);
   }
 
   @override
