@@ -98,8 +98,6 @@ class _HomePageState extends State<HomePage>
                   ),
                   slivers: [
                     SliverPadding(
-                      // 内容顶距：头部 + 14dp 呼吸位（静止时 Banner 完整
-                      // 露在 chip 栏下方；滚动时内容照常从带下穿过）。
                       padding: EdgeInsets.fromLTRB(
                         16,
                         headerExtent + 14,
@@ -113,30 +111,35 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 雾面带：恒定雾化 + 模糊羽化（2026-10-20 14:24 修“界限太明显”）。
+          // 雾面带：恒定雾化 + 模糊羽化（底部 44px 同步淡出）。
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
+          // 回顶部按钮（2026-10-20 14:28 选 B）：右上角骑在雾带下沿 ——
+          // 球心 = 带底边：上半截浸在雾带里（被羽化层包），下半截压在
+          // 清晰内容上；内容滚动时从带边这条缝穿过，按钮骑缝。
+          // （原 Scaffold 默认 endFloat 右下角位置废弃。）
+          Positioned(
+            top: headerExtent - 49, // box 内球心居中：49 = 20 + 58/2 - 1
+            right: 16,
+            child: FogButton(
+              scrollListenable: _fabPx,
+              onTap: _toTop,
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: _bottomBar(),
-      floatingActionButton: FogButton(
-        scrollListenable: _fabPx,
-        onTap: _toTop,
-      ),
     );
   }
 
   /// 雾面带：
   /// · 恒定雾化（无渐入事件 = 无“拖蒙版”读感），内容实时穿带。
-  /// · **模糊羽化**：旧版混色有羽化但模糊被 ClipRect 硬切 —— 色渐隐、
-  ///   糊不渐隐，那条硬边就是“太明显的界限”。现改为 ShaderMask(dstIn)
-  ///   把【模糊结果 + 混色】整体在底部 44px 内同步淡出，内容从清晰
-  ///   → 渐糊平滑穿过，硬线消失。
-  /// · 搜索/chips 画在羽化层之上，保持清晰不被 mask 淡化。
+  /// · 模糊羽化：ShaderMask(dstIn) 把模糊+混色在底部 44px 内同步淡出，
+  ///   硬线消失，内容从清晰 → 渐糊平滑穿过。
+  /// · 搜索/chips 画在羽化层之上，保持清晰。
   Widget _fogHeader() {
     return ClipRect(
       child: Stack(
         children: [
-          // 模糊+混色层：整体被底部渐变 mask 淡出
           SizedBox.expand(
             child: ShaderMask(
               key: const Key('fog-band-blur'),
@@ -159,7 +162,6 @@ class _HomePageState extends State<HomePage>
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                 child: Stack(
                   children: [
-                    // 混色层：softLight 平涂（羽化交给上面的 mask）
                     Positioned.fill(
                       child: CustomPaint(
                         key: const Key('fog-band'),
@@ -171,7 +173,6 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 清晰内容层：搜索 + chips 不受羽化影响
           SafeArea(
             bottom: false,
             child: Column(
@@ -184,8 +185,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 搜索：全宽单胶囊、图标+文字左对齐（对照 2026-10-20 官方截图，
-  /// 官方顶栏无「签到」副钮，搜索横贯整行）。
+  /// 搜索：全宽单胶囊、图标+文字左对齐（对照官方截图）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -203,8 +203,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// chip 组（1:1）：选中黑胶囊 / 未选白胶囊，背景色随同一根弹簧在 chip
-  /// 间过渡；高度沿用原分组栏 40，雾面带高度账（100dp）不变。
+  /// chip 组（1:1）：选中黑胶囊 / 未选白胶囊，弹簧过渡。
   Widget _tabBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -252,10 +251,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 内容区（2026-10-20 对照官方截图重构）：
-  /// ① 推荐 = 一行 3 张锁屏高卡（9:16 预览 + 大时钟，标题在卡下）；
-  /// ② 分区头「精选小部件 + 查看更多」；
-  /// ③ 小部件 = 3 列×2 行方卡（迷你组件拼贴，标题在卡下）。
+  /// 内容区（对照官方截图）：① 锁屏高卡 ② 分区头 ③ 小部件方卡。
   Widget _feed(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
@@ -273,7 +269,6 @@ class _HomePageState extends State<HomePage>
           children: [
             const BannerCard(),
             const SizedBox(height: 12),
-            // ① 推荐：3 列锁屏高卡
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -286,7 +281,6 @@ class _HomePageState extends State<HomePage>
               ],
             ),
             const SizedBox(height: 20),
-            // ② 分区头
             Row(
               children: [
                 const Text(
@@ -313,7 +307,6 @@ class _HomePageState extends State<HomePage>
               ],
             ),
             const SizedBox(height: 10),
-            // ③ 小部件：3 列 × 2 行
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -332,10 +325,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 底栏（1:1）：首页 / 分类 / 每日精选 / 我的，浮起圆角玻璃面板。
-  /// 真值：nav_height 61.3dp、nav_parent_margin_top 8dp。
-  /// 图标照参考包 SVG 真值（stroke #000 纯黑系）：选中纯黑、未选 80%
-  /// 黑（原来 54% 发灰 = "不亮"）。Material 承载 ink，水波纹在底色之上。
+  /// 底栏（1:1）：浮起圆角玻璃面板，选中纯黑、未选 80% 黑。
   Widget _bottomBar() {
     const icons = [
       Icons.format_paint, // 首页
@@ -433,7 +423,7 @@ const _locks = <_ThemeArt>[
   ),
 ];
 
-/// 小部件：3×2 方卡（前 3 个照抄官方截图标题）。
+/// 小部件：3×2 方卡。
 const _widgets = <_ThemeArt>[
   _ThemeArt(
     '蜘蛛侠 酷感雨雾',
@@ -467,8 +457,7 @@ const _widgets = <_ThemeArt>[
   ),
 ];
 
-/// 锁屏高卡：渐变 + 顶部状态胶囊 + 大时钟（上 1/3 构图）+ 底部快捷圆，
-/// 标题在卡下。
+/// 锁屏高卡。
 class _LockCard extends StatelessWidget {
   const _LockCard(this.art, this.w);
 
@@ -501,7 +490,6 @@ class _LockCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // 顶部状态胶囊
               Positioned(
                 top: 9,
                 left: 9,
@@ -528,7 +516,6 @@ class _LockCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // 大时钟区（上 1/3，锁屏构图）
               Positioned(
                 top: h * 0.28,
                 left: 6,
@@ -559,7 +546,6 @@ class _LockCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // 底部快捷圆
               Positioned(
                 bottom: 12,
                 left: 0,
@@ -605,7 +591,7 @@ class _LockCard extends StatelessWidget {
   }
 }
 
-/// 小部件方卡：渐变底 + 2×2 迷你组件拼贴，标题在卡下。
+/// 小部件方卡。
 class _WidgetCard extends StatelessWidget {
   const _WidgetCard(this.art, this.w);
 
@@ -686,20 +672,19 @@ class _WidgetCard extends StatelessWidget {
   }
 }
 
-/// blurbgmix 混色层：#6B6B6B（平涂）以 softLight 混进模糊后的背景，
-/// 恒定 alpha 0.651；羽化交由外层 ShaderMask 对【模糊+混色】整体淡出
-/// （旧版只羽化色、糊被硬切 = “界限太明显”）。
+/// blurbgmix 混色层：#6B6B6B softLight 恒定 0.651，羽化由外层
+/// ShaderMask 对模糊+混色整体淡出。
 class _BandTintPainter extends CustomPainter {
   _BandTintPainter(this.alpha);
 
-  final double alpha; // 恒定 0.651（随带一起常开）
+  final double alpha;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     const base = Color(0xFF6B6B6B);
     final paint = Paint()
-      ..blendMode = BlendMode.softLight // 混进模糊，不是盖一层
+      ..blendMode = BlendMode.softLight
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
