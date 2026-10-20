@@ -21,6 +21,10 @@ class _HomePageState extends State<HomePage>
     with TickerProviderStateMixin {
   final _sc = ScrollController();
   final _fabPx = ValueNotifier<double>(0);
+  // 全按钮统一高亮信号（2026-10-20 15:35 “靠近按钮按钮高亮，是所有按钮；
+  // 是界面快穿过”）：界面内容快穿过谁，谁就高亮 —— 用接近度
+  // clamp(px/50) 驱动搜索胶囊、chips、悬浮球的白描边柔光，回顶熄灭。
+  final _prox = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
     vsync: this,
@@ -48,6 +52,7 @@ class _HomePageState extends State<HomePage>
     _enterC.dispose();
     _sc.dispose();
     _fabPx.dispose();
+    _prox.dispose();
     super.dispose();
   }
 
@@ -83,6 +88,7 @@ class _HomePageState extends State<HomePage>
                 onNotification: (n) {
                   final px = n.metrics.pixels;
                   _fabPx.value = px < 0 ? 0.0 : px;
+                  _prox.value = (px / 50).clamp(0.0, 1.0).toDouble();
                   return false;
                 },
                 child: CustomScrollView(
@@ -106,9 +112,7 @@ class _HomePageState extends State<HomePage>
             ),
           ),
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
-          // 按钮下移留缝（15:23 修“箭头怎么在最上面”）：球顶离带底
-          // 12px，内容上滑先从带底这条缝穿过、再滑到按钮后面 ——
-          // 即 B 原意“内容从雾带和按钮之间穿过”。box 顶 = 球顶 - 20。
+          // 悬浮球：带底 12px 缝下方，内容从缝里穿过
           Positioned(
             top: headerExtent - 8,
             right: 16,
@@ -123,8 +127,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：恒定雾化 + ShaderMask(dstIn) 模糊/混色底部 44px 整体羽化；
-  /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
       child: Stack(
@@ -168,16 +170,43 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// 搜索胶囊：内容穿过时白描边+柔光高亮（接近度驱动）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
       child: Row(
         children: [
           Expanded(
-            child: CapsuleButton(
-              label: '搜索主题 / 字体 / 壁纸',
-              icon: Icons.search,
-              onTap: () {},
+            child: AnimatedBuilder(
+              animation: _prox,
+              builder: (context, child) {
+                final h = _prox.value;
+                return Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      if (h > 0.01)
+                        BoxShadow(
+                          color: Colors.white.withOpacity(0.45 * h),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                    ],
+                    border: Border.all(
+                      color: Colors.white.withOpacity(
+                        (0.16 + 0.44 * h).clamp(0.0, 1.0),
+                      ),
+                      width: 1,
+                    ),
+                  ),
+                  child: child,
+                );
+              },
+              child: CapsuleButton(
+                label: '搜索主题 / 字体 / 壁纸',
+                icon: Icons.search,
+                onTap: () {},
+              ),
             ),
           ),
         ],
@@ -196,11 +225,13 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// chip：内容穿过时同步白柔光（与搜索/悬浮球同源信号）。
   Widget _chip(int i) {
     return AnimatedBuilder(
-      animation: _tabC,
+      animation: Listenable.merge([_tabC, _prox]),
       builder: (context, _) {
         final t = (1 - (i - _tabC.value).abs()).clamp(0.0, 1.0).toDouble();
+        final h = _prox.value;
         final bg =
             Color.lerp(const Color(0xD9FFFFFF), const Color(0xD9000000), t);
         final fg = Color.lerp(const Color(0xE6000000), Colors.white, t);
@@ -216,6 +247,18 @@ class _HomePageState extends State<HomePage>
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.10 + 0.50 * h),
+                  width: 1,
+                ),
+                boxShadow: [
+                  if (h > 0.01)
+                    BoxShadow(
+                      color: Colors.white.withOpacity(0.40 * h),
+                      blurRadius: 9,
+                      spreadRadius: 0.5,
+                    ),
+                ],
               ),
               child: Text(
                 _tabs[i],
