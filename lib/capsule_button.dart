@@ -3,9 +3,15 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-// 小米磨砂玻璃胶囊按钮（搜索等输入位）：
-// - 真磨砂：BackdropFilter 背景模糊 18 + 奶白玻璃 55% + 白描边 55%；
-// - 黑投影 0x14 已删（2026-10-20 21:30 评审“阴影要去掉”）：只留玻璃本体；
+// 小米磨砂玻璃胶囊按钮（搜索位）——材质回真值（06:43 评审
+// “按钮和胶囊的材质跟主题还是有差距”，SPECS §六【资源】）：
+// - 搜索底 = **#0A000000**（真值 4% 黑薄纱压在真模糊上，弃白底 0x8C）；
+// - 搜索图标 = **#4D000000**（真值 30% 黑，弃 0x8A）；
+// - 搜索词字号 = **17sp**（真值，弃 h*0.36）；
+// - 真磨砂：BackdropFilter 背景模糊 18 不变；
+// - 内描边删除：01:07 已把高亮描边提到外层 Stack 覆盖层
+//   （0.15+0.70×接近度），内圈再画一圈就是双圈脏边；
+// - 黑投影 0x14 已删（2026-10-20 21:30 评审“阴影要去掉”）；
 // - 交互：按下 scale→0.96（80ms easeOut），松手 spring(400/26) 回弹。
 class CapsuleButton extends StatefulWidget {
   const CapsuleButton({
@@ -66,8 +72,8 @@ class _CapsuleButtonState extends State<CapsuleButton>
           animation: _p,
           builder: (context, child) =>
               Transform.scale(scale: 0.96 + 0.04 * _p.value, child: child),
-          // 黑投影层已删（21:30 评审：阴影要去掉）：磨砂胶囊只留
-          // 玻璃本体 + 白描边，底下不再压 0x14 暗影。
+          // 材质 = 真值薄纱底（#0A000000）+ 真模糊 18；玻璃边缘交给
+          // 外层接近度覆盖描边，这里不再画内圈（避免双圈）。
           child: ClipRRect(
             borderRadius: BorderRadius.circular(h / 2),
             child: BackdropFilter(
@@ -78,11 +84,8 @@ class _CapsuleButtonState extends State<CapsuleButton>
                   horizontal: widget.dense ? 12.0 : 16.0,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0x8CFFFFFF),
+                  color: const Color(0x0A000000), // 真值搜索底 #0a000000
                   borderRadius: BorderRadius.circular(h / 2),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.55),
-                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -91,7 +94,7 @@ class _CapsuleButtonState extends State<CapsuleButton>
                       Icon(
                         widget.icon,
                         size: h * 0.45,
-                        color: const Color(0x8A000000),
+                        color: const Color(0x4D000000), // 真值搜索图标
                       ),
                       const SizedBox(width: 6),
                     ],
@@ -101,7 +104,7 @@ class _CapsuleButtonState extends State<CapsuleButton>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: h * 0.36,
+                          fontSize: widget.dense ? h * 0.36 : 17.0, // 真值 17sp
                           fontWeight: FontWeight.w500,
                           color: const Color(0xE6000000),
                           letterSpacing: 0.2,

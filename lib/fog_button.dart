@@ -8,23 +8,17 @@ import 'package:flutter/physics.dart';
 /// 雾面按钮 —— 小米柔光玻璃（2026-10-20 15:31 评审
 /// “还是黑的没有雾，能把箭头去掉吗”）：
 /// · **箭头（图标）已移除**：按钮就是一颗素玻璃球，点击仍回顶部。
-/// · **雾改为常驻**：静止态就有奶白雾纱 0x66（40%），滚动再加浓
-///   +0x1A（→50% 封顶）—— 之前雾挂在 40px 后才起，静止态无雾，
-///   深色内容一透就成“黑的”。现在任何状态都是奶白雾面，
-///   深色底上也柔（柔光玻璃），滚动只做微调不改变基调。
-/// · **投影已全部移除**（2026-10-20 21:06 评审“按键的阴影要去掉，
-///   雾化感觉没了”）：球底两层黑投影 0x52/0x2E 会在奶白雾面下压出
-///   黑环，雾感被阴影吃掉；去掉后球体只剩雾纱+柔光+细白亮边，
-///   纯雾化悬浮，无任何黑色投影层。
-/// · **磨砂颗粒层**（2026-10-20 21:10 评审“按钮没有磨砂感”）：
-///   雾纱里叠一层固定种子的程序噪声（白/黑细点 @0x1A/@0x14，320 点，
-///   点位不随帧变不闪烁），奶白雾底同时 0x66→0x7F（40%→50%，
-///   滚动加浓 +0x14 封顶 ~58%）—— 纯色/浅色背景后也能读出
-///   砂面颗粒，不再是一颗光滑圆点；点层在外层 ShaderMask 内，
-///   随雾纱一同羽化到边。
-/// · 亮 = 拎起 × (0.6 + 0.4×接近度)：一滚就 60% 亮，50px 拉满；
-///   拎起 = px>4 立即弹 -16px（~0.3s 微回弹）；慢雾弹簧 40-130px
-///   只调浓淡。
+/// · **雾改为常驻**：静止态就有奶白雾纱，滚动再加浓。
+/// · **投影已全部移除**（21:06 评审“阴影去掉，雾化感觉没了”）。
+/// · **磨砂颗粒层**（21:10 评审“按钮没有磨砂感”）：固定种子程序噪声。
+/// · 亮 = 拎起 × (0.6 + 0.4×接近度)；拎起 = px>4 弹 -16px；慢雾 40-130px。
+/// · **材质回主题真值**（06:43 评审“按钮和胶囊的材质跟主题还是有差距”）：
+///   雾纱里叠 ColorBlendToken.l 手机档三层【字节码 SPECS §五】
+///   （0x1A000000×PLUS_DARKER / 0x996C6C6C×LUMINOSITY /
+///   0x99060606×SOFT_LIGHT，alpha 随亮/雾 0.45→1.0 爬升）——
+///   这才是真机主题商店组件雾面的真实混色；奶白雾纱 0x7F→0x38
+///   只留薄纱、白提升层 0.30→0.18，不再用白底盖住混色层
+///   （之前的差距：整颗发“白塑料”，真机是随底色走的玻璃）。
 /// · 模糊羽化/三级阶梯/骑缝位置（带底 12px 缝）不变。
 class FogButton extends StatefulWidget {
   const FogButton({
@@ -103,8 +97,11 @@ class _FogButtonState extends State<FogButton>
               (lift * (0.6 + 0.4 * prox)).clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
           final double glow = bright * (1 - 0.5 * fog);
-          // 常驻奶白雾 0x7F（50%），滚动加浓 +0x14（→ ~58% 封顶）
-          final double milk = 0.50 + 0.08 * fog;
+          // 奶白薄纱 0x7F→0x38（白退纱，真值混色层主导观感）
+          final double milk = 0.22 + 0.06 * fog;
+          // ColorBlendToken.l 混合强度：静止 0.45 → 亮起 +0.35 → 起雾 +0.20
+          final double mix =
+              (0.45 + 0.35 * bright + 0.20 * fog).clamp(0.0, 1.0).toDouble();
 
           return SizedBox(
             width: s + 40,
@@ -128,9 +125,7 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                // 黑投影层已移除（21:06 评审：阴影去掉，雾化感觉没了）——
-                // 从前这里压着 0x52/0x2E 两层黑色 BoxShadow，
-                // 球底黑环把奶白雾面衬得发硬；现在雾纱直接浮在柔光上。
+                // 黑投影层已移除（21:06 评审：阴影去掉，雾化感觉没了）。
                 Transform.translate(
                   offset: Offset(0, -16 * lift),
                   child: SizedBox(
@@ -157,7 +152,7 @@ class _FogButtonState extends State<FogButton>
                               child: ClipOval(
                                 child: BackdropFilter(
                                   filter:
-                                      ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                      ImageFilter.blur(sigmaX: 11, sigmaY: 11),
                                   child: SizedBox(
                                     width: s + 12,
                                     height: s + 12,
@@ -165,7 +160,7 @@ class _FogButtonState extends State<FogButton>
                                       child: ClipOval(
                                         child: BackdropFilter(
                                           filter: ImageFilter.blur(
-                                              sigmaX: 26, sigmaY: 26),
+                                              sigmaX: 22, sigmaY: 22),
                                           child: SizedBox(
                                             width: s,
                                             height: s,
@@ -191,8 +186,9 @@ class _FogButtonState extends State<FogButton>
                                                     blendMode: BlendMode.dstIn,
                                                     child: Stack(
                                                       children: [
-                                                        // **常驻奶白雾纱**
-                                                        // （静止也是雾面）
+                                                        // 常驻奶白薄纱
+                                                        // （0x7F→0x38，
+                                                        // 只留纱不盖玻璃）
                                                         ColoredBox(
                                                           color: Colors.white
                                                               .withOpacity(
@@ -224,10 +220,21 @@ class _FogButtonState extends State<FogButton>
                                                             ),
                                                           ),
                                                         ),
+                                                        // **主题真值三层混色**
+                                                        // ColorBlendToken.l，
+                                                        // SPECS §五【字节码】
+                                                        Positioned.fill(
+                                                          child: CustomPaint(
+                                                            painter:
+                                                                _ThemeMixPainter(
+                                                              mix,
+                                                            ),
+                                                          ),
+                                                        ),
                                                         ColoredBox(
                                                           color: Colors.white
                                                               .withOpacity(
-                                                            0.30 * bright,
+                                                            0.18 * bright,
                                                           ),
                                                         ),
                                                         // 磨砂砂点：固定种子
@@ -341,6 +348,48 @@ class _GlassRimPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GlassRimPainter old) =>
       old.bright != bright || old.fog != fog;
+}
+
+/// ColorBlendToken.l 手机档三层混色（SPECS §五【字节码】）——真机
+/// 主题商店组件雾面（FAB/HyperCard 等）的真实玻璃配方：
+/// 层1 0x1A000000 × PLUS_DARKER / 层2 0x996C6C6C × LUMINOSITY /
+/// 层3 0x99060606 × SOFT_LIGHT；alpha 随 v（亮/雾）爬升。
+/// 绘制发生在 BackdropFilter 之后的同一帧缓冲上，与模糊后的背景相混。
+class _ThemeMixPainter extends CustomPainter {
+  _ThemeMixPainter(this.v);
+
+  final double v;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (v <= 0.01) return;
+    final rect = Offset.zero & size;
+
+    // 层1 0x1A000000 × PLUS_DARKER
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x1A * v).round(), 0, 0, 0)
+        ..blendMode = BlendMode.plusDarker,
+    );
+    // 层2 0x996C6C6C × LUMINOSITY
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x99 * v).round(), 0x6C, 0x6C, 0x6C)
+        ..blendMode = BlendMode.luminosity,
+    );
+    // 层3 0x99060606 × SOFT_LIGHT
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Color.fromARGB((0x99 * v).round(), 0x06, 0x06, 0x06)
+        ..blendMode = BlendMode.softLight,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ThemeMixPainter old) => old.v != v;
 }
 
 /// 磨砂砂点（21:10 评审“按钮没有磨砂感”）：

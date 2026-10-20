@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 
 import 'cards.dart';
 import 'capsule_button.dart';
@@ -25,6 +28,13 @@ class _HomePageState extends State<HomePage>
   // （接近度 clamp(px/50) 驱动搜索/chips/查看更多/导航条/悬浮球，回顶熄灭）。
   final _prox = ValueNotifier<double>(0);
 
+  // —— 雾色动态取色（06:43 评审“雾色应该用动态取色的方法”）——
+  final _contentKey = GlobalKey(); // 抓帧边界（内容区 RepaintBoundary）
+  final _fogTint = // 采样平滑后的雾色
+      ValueNotifier<Color>(const Color(0xFFE4E7EB));
+  Timer? _fogTick; // 采样节拍 160ms
+  bool _sampling = false; // 抓帧防重入
+
   late final AnimationController _tabC = AnimationController(
     vsync: this,
     value: 0,
@@ -46,12 +56,24 @@ class _HomePageState extends State<HomePage>
   );
 
   @override
+  void initState() {
+    super.initState();
+    // 动态取色节拍：_sampleFog 内部有 _sampling 防重入，
+    // 抓帧/解码失败静默（catch），不影响正常渲染。
+    _fogTick = Timer.periodic(const Duration(milliseconds: 160), (_) {
+      unawaited(_sampleFog());
+    });
+  }
+
+  @override
   void dispose() {
+    _fogTick?.cancel();
     _tabC.dispose();
     _enterC.dispose();
     _sc.dispose();
     _fabPx.dispose();
     _prox.dispose();
+    _fogTint.dispose();
     super.dispose();
   }
 
@@ -68,6 +90,78 @@ class _HomePageState extends State<HomePage>
     duration: const Duration(milliseconds: 420),
     curve: Curves.easeOutCubic,
   );
+
+  /// 雾色动态取色（06:43 评审“雾色应该用动态取色的方法”）：
+  /// 每 160ms 把内容区抓成 ~0.12 倍小图，只统计雾带覆盖的顶部区域
+  /// （0 .. topInset+136 逻辑像素），网格取平均色 → 彩度判断：
+  /// 近灰（页面底色）→ 中性雾 #E4E7EB；有彩 → 提亮成“雾色”
+  /// （lerp 白 0.42，亮度不足再补到 luma≥175）→ 以 0.30 步长平滑
+  /// 插值喂 _fogTint。雾面着色层的主色层改用该值——静止是中性薄雾，
+  /// 内容滑过时雾面被染成穿过内容的色（不再靠固定奶白+饱和透色）。
+  Future<void> _sampleFog() async {
+    if (_sampling || !mounted) return;
+    final boundary =
+        _contentKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
+    if (boundary == null) return;
+    _sampling = true;
+    try {
+      final topInset = MediaQuery.paddingOf(context).top;
+      final img = await boundary.toImage(pixelRatio: 0.12);
+      final w = img.width;
+      final h = img.height;
+      final bd = await img.toByteData(format: ImageByteFormat.rawRgba);
+      img.dispose();
+      if (bd == null || !mounted || w <= 0 || h <= 0) return;
+      final bytes = bd.buffer.asUint8List(bd.offsetInBytes, bd.lengthInBytes);
+      final yMax =
+          ((topInset + _kHeaderExtent + 36) * 0.12).floor().clamp(0, h - 1);
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var y = 0; y <= yMax; y += 2) {
+        for (var x = 0; x < w; x += 2) {
+          final i = (y * w + x) * 4;
+          if (i + 2 >= bytes.length) break;
+          r += bytes[i];
+          g += bytes[i + 1];
+          b += bytes[i + 2];
+          n++;
+        }
+      }
+      if (n == 0) return;
+      r ~/= n;
+      g ~/= n;
+      b ~/= n;
+      final mx = math.max(r, math.max(g, b));
+      final mn = math.min(r, math.min(g, b));
+      Color target;
+      if ((mx - mn) < 13) {
+        // 近灰（页面底色主导）→ 中性薄雾，不引入色偏
+        target = const Color(0xFFE4E7EB);
+      } else {
+        var c = Color.fromARGB(255, r, g, b);
+        c = Color.lerp(c, Colors.white, 0.42)!; // 压到雾色亮度
+        final argb = c.toARGB32();
+        final luma = 0.299 * ((argb >> 16) & 0xFF) +
+            0.587 * ((argb >> 8) & 0xFF) +
+            0.114 * (argb & 0xFF);
+        if (luma < 175) {
+          c = Color.lerp(
+            c,
+            Colors.white,
+            ((175 - luma) / 255).clamp(0.0, 1.0).toDouble(),
+          )!;
+        }
+        target = c;
+      }
+      final cur = _fogTint.value;
+      final next = Color.lerp(cur, target, 0.30)!;
+      if (next.toARGB32() != cur.toARGB32()) _fogTint.value = next;
+    } catch (_) {
+      // 首帧/尺寸竞争等抓帧失败：静默，下个周期再试
+    } finally {
+      _sampling = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,22 +184,27 @@ class _HomePageState extends State<HomePage>
                   _prox.value = (px / 50).clamp(0.0, 1.0).toDouble();
                   return false;
                 },
-                child: CustomScrollView(
-                  controller: _sc,
-                  physics: const BouncingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics(),
-                  ),
-                  slivers: [
-                    SliverPadding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        headerExtent + 14,
-                        16,
-                        16,
-                      ),
-                      sliver: SliverToBoxAdapter(child: _feed(context)),
+                // RepaintBoundary：动态取色的抓帧边界（只含内容，
+                // 不含雾带/搜索/chips 这些浮层——采到的是“穿过的内容”本色）
+                child: RepaintBoundary(
+                  key: _contentKey,
+                  child: CustomScrollView(
+                    controller: _sc,
+                    physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
                     ),
-                  ],
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          headerExtent + 14,
+                          16,
+                          16,
+                        ),
+                        sliver: SliverToBoxAdapter(child: _feed(context)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -123,14 +222,13 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：恒定雾化 + 模糊/混色底部 24px 整体羽化。
-  /// 羽化历史：44px（模糊被吃在 Tab 区，内容硬穿）→ 16px（21:30，
-  /// Tab 底下有糊有雾，但 21:51 截图“雾化没做好”：过渡太急 +
-  /// 奶白太淡、Banner 颜色穿透成色板）→ 24px（chip 已自带玻璃，
-  /// 底缘过渡更柔）→ 56px（01:01 评审“还能看到边界”：羽化必须
-  /// ≥ 模糊 sigma 46，否则模糊层底缘裁出糊/清接缝）；奶白
-  /// 0.62→0.34→0.26、白 softLight 0.70→0.58（01:01 评审“雾没变色”）：
-  /// 白层再退、饱和 1.45→1.75，雾面色相由穿过内容主导）。
+  /// 雾面带：恒定雾化 + 模糊/混色底部 56px 整体羽化。
+  /// 雾色着色主层已改**动态取色**（06:43 评审“雾色应该用动态取色的
+  /// 方法”）：_sampleFog 160ms 采样穿过的内容主色，平滑插值后由
+  /// AnimatedBuilder 喂给 _BandTintPainter——静止中性雾，内容滑过
+  /// 染成内容色；固定奶白只退为底色参考（被 tint 层替代）。
+  /// 羽化 56（≥模糊 sigma 46）与模糊 46 + 饱和 1.75 保持
+  /// （01:01 评审“雾没变色/边界可见”结论）。
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -169,13 +267,14 @@ class _HomePageState extends State<HomePage>
                   inner: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
                 ),
                 // 不包 Stack：Stack 默认 fit=loose 会放开非定位子级约束，
-                // CustomPaint(无子级) size 被收成 0×0——tint（奶白+软光）
-                // 整层不画，只剩模糊，Banner 紫色直接穿透（23:29 截图）。
-                // 单 CustomPaint 直吃 BackdropFilter 紧约束（可用版结构）；
-                // 砂点颗粒已按 00:15 评审要求移除，只留雾面 tint。
-                child: CustomPaint(
-                  key: const Key('fog-band'),
-                  painter: _BandTintPainter(0.92),
+                // CustomPaint(无子级) size 被收成 0×0——tint 整层不画。
+                // AnimatedBuilder 每帧给最新动态雾色（_fogTint）。
+                child: AnimatedBuilder(
+                  animation: _fogTint,
+                  builder: (context, _) => CustomPaint(
+                    key: const Key('fog-band'),
+                    painter: _BandTintPainter(0.92, _fogTint.value),
+                  ),
                 ),
               ),
             ),
@@ -194,6 +293,7 @@ class _HomePageState extends State<HomePage>
 
   /// 搜索胶囊（磨砂玻璃）：内容穿过时高亮（01:07 修复“搜索不亮”）：
   /// 描边提至子级之上 + 外白光晕 + 托起暗影，接近度驱动。
+  /// 材质本体真值见 capsule_button（#0A000000 底 + 模糊 18）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -797,28 +897,29 @@ class _WidgetCard extends StatelessWidget {
 }
 
 // 砂点颗粒层 _BandGrainPainter 已按 00:15 评审要求移除（点点去掉），
-// 雾带只保留 _BandTintPainter 奶白雾面。
+// 雾带只保留 _BandTintPainter；主色层已改动态取色（06:43 评审）。
 
 class _BandTintPainter extends CustomPainter {
-  _BandTintPainter(this.alpha);
+  _BandTintPainter(this.alpha, this.tint);
 
   final double alpha;
 
-  /// 雾面着色三层：薄奶白 normal + 白 softLight（提密保色）+
-  /// 灰 softLight（玻璃深度 0.30 不变）。
-  /// 01:01 评审“雾没变色”：奶白 0.34→0.26、白 softLight 0.70→0.58，
-  /// 白层再退一档，色相源头饱和 1.45→1.75——雾面颜色完全由穿过
-  /// 的内容主导，密感交给模糊 46。
+  /// 动态雾色（_sampleFog 160ms 采样 + 0.30 平滑插值后的值）：
+  /// 内容彩 → 染成内容色的雾；内容灰/静止 → 中性薄雾 #E4E7EB。
+  final Color tint;
+
+  /// 雾面着色三层：①动态雾色（主色层，替代固定奶白）
+  /// ②白 softLight 提密保色 ③灰 softLight 玻璃深度。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     final rect = Offset.zero & size;
-    // 1) 薄奶白 0.34→0.26（01:01 评审“雾没变色”）：再退一档，色相主导
-    final milk = Paint()
-      ..color = Colors.white.withValues(alpha: 0.26 * alpha);
-    canvas.drawRect(rect, milk);
-    // 2) 增密提亮 0.70→0.58：白 softLight 保密度但不再把色刷白，
-    //    密感交给模糊 46 + 饱和 1.75
+    // 1) 动态雾色主层（06:43“雾色应该用动态取色的方法”）：
+    //    采样得到的穿过内容主色，压成雾色亮度后 0.42 上雾面
+    final wash = Paint()
+      ..color = tint.withValues(alpha: 0.42 * alpha);
+    canvas.drawRect(rect, wash);
+    // 2) 增密提亮 0.58：白 softLight 保密度但不把色刷白
     final lift = Paint()
       ..blendMode = BlendMode.softLight
       ..color = Colors.white.withValues(alpha: 0.58 * alpha);
@@ -840,5 +941,6 @@ class _BandTintPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BandTintPainter old) => old.alpha != alpha;
+  bool shouldRepaint(_BandTintPainter old) =>
+      old.alpha != alpha || old.tint != tint;
 }
