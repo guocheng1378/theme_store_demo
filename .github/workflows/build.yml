@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   android:
     # 2026-10-19 起 ubuntu-latest 开始切 26.04，新镜像 Android 环境
@@ -69,3 +72,20 @@ jobs:
           name: theme_store_demo-apk
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
+      # 把 APK 推到 apk-dist 分支：raw 直链免鉴权下载（artifact zip 要 token，手机端 401）
+      - name: Publish APK to apk-dist
+        if: success()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git init /tmp/dist
+          cd /tmp/dist
+          git checkout -b apk-dist
+          cp "$GITHUB_WORKSPACE/build/app/outputs/flutter-apk/app-release.apk" app-release.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f app-release.apk
+          git commit -m "apk ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-dist
