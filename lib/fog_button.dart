@@ -5,31 +5,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// 雾面按钮 —— 小米柔光玻璃（2026-10-20 15:20 修“不亮/不动/只有黑”）：
-/// **黑的根源**：地面投影那团 55% 黑圆盘压在球底，玻璃的
-/// BackdropFilter 模糊采样把投影一起糊进球里 = 死黑。修：
-/// · 投影减淡（0x8C→0x52、0x59→0x2E），缝隙仍在但不染黑球底；
-/// · 白纱加底：恒定奶白 0x14→0x40（25%），雾态再 +0.30 ——
-///   滚起来明显雾化、不再只有黑；总透光仍在，玻璃感不丢。
-/// · **亮 = 拎起 × (0.6 + 0.4×接近度)**：一滚动立刻 60% 亮
-///   （可见的动+亮），快到按钮（50px）拉满；辉光 0.34→0.42。
-/// · 拎起 = px>4 立即弹（320/19 ~0.3s 微回弹）-16px；
-///   慢雾 = 软弹簧（55/16 ~0.6s）40-130px。
-/// · 模糊羽化/三级阶梯/骑缝位置不变。
+/// 雾面按钮 —— 小米柔光玻璃（2026-10-20 15:31 评审
+/// “还是黑的没有雾，能把箭头去掉吗”）：
+/// · **箭头（图标）已移除**：按钮就是一颗素玻璃球，点击仍回顶部。
+/// · **雾改为常驻**：静止态就有奶白雾纱 0x66（40%），滚动再加浓
+///   +0x1A（→50% 封顶）—— 之前雾挂在 40px 后才起，静止态无雾，
+///   深色内容一透就成“黑的”。现在任何状态都是奶白雾面，
+///   深色底上也柔（柔光玻璃），滚动只做微调不改变基调。
+/// · 投影减淡（0x52/0x2E）不染球底；白纱+投影不再发黑。
+/// · 亮 = 拎起 × (0.6 + 0.4×接近度)：一滚就 60% 亮，50px 拉满；
+///   拎起 = px>4 立即弹 -16px（~0.3s 微回弹）；慢雾弹簧 40-130px
+///   只调浓淡。
+/// · 模糊羽化/三级阶梯/骑缝位置（带底 12px 缝）不变。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
     required this.scrollListenable,
     this.onTap,
     this.size = 58,
-    this.icon = Icons.arrow_upward,
   });
 
-  /// 滚动像素（非负）。px>4 触发拎起；fog = clamp((px-40)/90)。
+  /// 滚动像素（非负）。px>4 触发拎起；fog（浓淡）= clamp((px-40)/90)。
   final ValueListenable<double> scrollListenable;
   final VoidCallback? onTap;
   final double size;
-  final IconData icon;
 
   @override
   State<FogButton> createState() => _FogButtonState();
@@ -92,12 +91,12 @@ class _FogButtonState extends State<FogButton>
           final double lift = _liftC.value;
           final double prox =
               (widget.scrollListenable.value / 50).clamp(0.0, 1.0).toDouble();
-          // 亮 = 拎起 × (0.6 + 0.4×接近度)：一滚就 60% 亮，
-          // 快到按钮（50px）拉满 —— “动+亮”立刻可见。
           final double bright =
               (lift * (0.6 + 0.4 * prox)).clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
           final double glow = bright * (1 - 0.5 * fog);
+          // 常驻奶白雾 0x66（40%），滚动加浓 +0x1A（→ ~50% 封顶）
+          final double milk = 0.40 + 0.10 * fog;
 
           return SizedBox(
             width: s + 40,
@@ -106,7 +105,6 @@ class _FogButtonState extends State<FogButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 氛围辉光（0.42，随亮起）
                 Container(
                   width: s + 8 + 14 * bright,
                   height: s + 8 + 14 * bright,
@@ -122,7 +120,6 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                // 地面投影（减淡：0x52/0x2E —— 不再把球底染黑）
                 Container(
                   width: s,
                   height: s,
@@ -202,11 +199,13 @@ class _FogButtonState extends State<FogButton>
                                                     blendMode: BlendMode.dstIn,
                                                     child: Stack(
                                                       children: [
-                                                        // 恒定奶白底 0x40：
-                                                        // 压住投影，不再死黑
-                                                        const ColoredBox(
-                                                          color:
-                                                              Color(0x40FFFFFF),
+                                                        // **常驻奶白雾纱**
+                                                        // （静止也是雾面）
+                                                        ColoredBox(
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                            milk,
+                                                          ),
                                                         ),
                                                         const DecoratedBox(
                                                           decoration:
@@ -239,29 +238,12 @@ class _FogButtonState extends State<FogButton>
                                                             0.30 * bright,
                                                           ),
                                                         ),
-                                                        // 雾态奶白纱 +0.30
-                                                        ColoredBox(
-                                                          color: Colors.white
-                                                              .withOpacity(
-                                                            0.30 * fog,
-                                                          ),
-                                                        ),
                                                       ],
                                                     ),
                                                   ),
                                                 ),
-                                                Icon(
-                                                  widget.icon,
-                                                  size: 26,
-                                                  color: Colors.white,
-                                                  shadows: const [
-                                                    Shadow(
-                                                      color: Color(0x8A000000),
-                                                      blurRadius: 10,
-                                                      offset: Offset(0, 2),
-                                                    ),
-                                                  ],
-                                                ),
+                                                // 箭头已移除（15:31 要求），
+                                                // 按钮为素玻璃球，点击回顶部
                                                 Positioned.fill(
                                                   child: CustomPaint(
                                                     painter: _GlassRimPainter(
@@ -295,7 +277,7 @@ class _FogButtonState extends State<FogButton>
   }
 }
 
-/// 柔光玻璃边：常驻 1px 细白亮边 + 反光弧 + 雾态辉光圈。
+/// 柔光玻璃边：常驻 1px 细白亮边 + 反光弧 + 雾态辉光圈（无图标）。
 class _GlassRimPainter extends CustomPainter {
   _GlassRimPainter({required this.bright, required this.fog});
 
