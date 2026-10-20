@@ -155,16 +155,15 @@ class _HomePageState extends State<HomePage>
               ).createShader(rect),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: Stack(
-                  children: [
-                    CustomPaint(
-                      key: const Key('fog-band'),
-                      painter: _BandTintPainter(0.75),
-                    ),
-                    const Positioned.fill(
-                      child: CustomPaint(painter: _BandGrainPainter()),
-                    ),
-                  ],
+                // 不包 Stack：Stack 默认 fit=loose 会放开非定位子级约束，
+                // CustomPaint(无子级) size 被收成 0×0——tint（奶白+软光）
+                // 整层不画，只剩模糊，Banner 紫色直接穿透（23:29 截图）。
+                // 改回单 CustomPaint：painter=雾带 tint、foregroundPainter=
+                // 砂点，尺寸吃 BackdropFilter 紧约束（与 21:51 可用版同构）。
+                child: CustomPaint(
+                  key: const Key('fog-band'),
+                  painter: _BandTintPainter(0.75),
+                  foregroundPainter: const _BandGrainPainter(),
                 ),
               ),
             ),
