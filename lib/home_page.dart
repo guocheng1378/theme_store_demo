@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -123,10 +124,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：恒定雾化 + 模糊/混色底部 16px 整体羽化（21:30 评审
-  /// “顶部雾化感觉没了”：44px 羽化把模糊几乎整段吃在 Tab 胶囊区，
-  /// Banner 到胶囊底下是硬穿；收到 16px 后 Tab 底下仍有糊+雾，
-  /// 底缘只留一小段过渡）；
+  /// 雾面带：恒定雾化 + 模糊/混色底部 24px 整体羽化。
+  /// 羽化历史：44px（模糊被吃在 Tab 区，内容硬穿）→ 16px（21:30，
+  /// Tab 底下有糊有雾，但 21:51 截图“雾化没做好”：过渡太急 +
+  /// 奶白太淡、Banner 颜色穿透成色板）→ 24px（本笔：chip 已自带
+  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80、
+  /// 带 alpha 0.651→0.75（有效白雾 0.36→0.60），并叠砂点颗粒。
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -141,7 +144,7 @@ class _HomePageState extends State<HomePage>
                 end: Alignment.bottomCenter,
                 stops: [
                   0.0,
-                  ((rect.height - 16) / rect.height).clamp(0.0, 1.0),
+                  ((rect.height - 24) / rect.height).clamp(0.0, 1.0),
                   1.0,
                 ],
                 colors: [
@@ -152,9 +155,16 @@ class _HomePageState extends State<HomePage>
               ).createShader(rect),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: CustomPaint(
-                  key: const Key('fog-band'),
-                  painter: _BandTintPainter(0.651),
+                child: Stack(
+                  children: [
+                    CustomPaint(
+                      key: const Key('fog-band'),
+                      painter: _BandTintPainter(0.75),
+                    ),
+                    const Positioned.fill(
+                      child: CustomPaint(painter: _BandGrainPainter()),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -744,24 +754,59 @@ class _WidgetCard extends StatelessWidget {
   }
 }
 
+/// 雾带砂点（21:51 评审“雾化没做好”）：与回顶球同款固定种子程序
+/// 噪声（白 0x1A + 黑 0x14 细点，点位固定不闪），画在雾带 tint 层上、
+/// 随 ShaderMask 一同羽化——纯色/浅色底上也能读出砂面颗粒，
+/// 顶栏不再是一块光滑的渐变色板。
+class _BandGrainPainter extends CustomPainter {
+  const _BandGrainPainter();
+
+  /// 归一化点位（单位正方形，按实际尺寸拉伸），固定种子、与尺寸无关；
+  /// 4200 点 ≈ 0.07 点/dp²（球 320 点/圆的同量级密度）。
+  static final List<Offset> _specks = () {
+    final rnd = math.Random(20261020);
+    return List.generate(4200, (_) {
+      return Offset(rnd.nextDouble(), rnd.nextDouble());
+    });
+  }();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lit = Paint()..color = const Color(0x1AFFFFFF);
+    final dark = Paint()..color = const Color(0x14000000);
+    for (var i = 0; i < _specks.length; i++) {
+      final p = _specks[i];
+      final off = Offset(p.dx * size.width, p.dy * size.height);
+      if (i.isEven) {
+        canvas.drawCircle(off, 1.1, lit);
+      } else {
+        canvas.drawCircle(off, 0.7, dark);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BandGrainPainter old) => false;
+}
+
 class _BandTintPainter extends CustomPainter {
   _BandTintPainter(this.alpha);
 
   final double alpha;
 
   /// 雾面着色：奶白提亮层 + 极轻灰软光层。
-  /// 旧版单层 #6B6B6B 深灰 softLight 是单向压暗——彩色内容上像雾，
-  /// 浅色页面上被压成灰黑带（用户反馈“雾面黑”）。现在先用白色
-  /// normal 层把底提亮，再叠 30% 强度的灰 softLight 保留玻璃深度。
+  /// 奶白 0.55→0.80、带 alpha 0.651→0.75（21:51 评审“雾化没做好”：
+  /// 有效白雾 0.36→0.60，紫色 Banner 不再穿透成色板，顶栏读作
+  /// 奶白雾面玻璃）；灰 softLight 强度保持 0.30 保留玻璃深度。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     final rect = Offset.zero & size;
     // 1) 奶白雾：normal 白层，浅色底上不再发黑
     final milk = Paint()
-      ..color = Colors.white.withValues(alpha: 0.55 * alpha);
+      ..color = Colors.white.withValues(alpha: 0.80 * alpha);
     canvas.drawRect(rect, milk);
-    // 2) 玻璃深度：极轻灰 softLight（强度从 1.0 降到 0.30）
+    // 2) 玻璃深度：极轻灰 softLight（强度 0.30）
     const base = Color(0xFF6B6B6B);
     final depth = Paint()
       ..blendMode = BlendMode.softLight
