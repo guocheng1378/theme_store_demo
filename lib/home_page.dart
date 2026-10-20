@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package/flutter/physics.dart';
+import 'package:flutter/physics.dart';
 
 import 'cards.dart';
 import 'capsule_button.dart';
@@ -114,8 +114,7 @@ class _HomePageState extends State<HomePage>
         ],
       ),
       bottomNavigationBar: _bottomBar(),
-      // 回顶部按钮（2026-10-20 15:40 “回顶部不是应该放下边吗”）：
-      // 挪回右下角（导航栏上方，系统 endFloat 标准位）。
+      // 回顶部按钮：右下角（导航栏上方，系统 endFloat 标准位）。
       // 素玻璃球（箭头已删）+ 常驻奶白雾 + 接近度高亮 + 拎起时序。
       floatingActionButton: FogButton(
         scrollListenable: _fabPx,
