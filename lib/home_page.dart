@@ -8,7 +8,6 @@ import 'capsule_button.dart';
 import 'fog_button.dart';
 import 'refresh_capsule.dart';
 
-/// 1:1 真页 chip 组：推荐 / 背屏 / 小部件 / 主题（黑胶囊选中态）
 const _tabs = ['推荐', '背屏', '小部件', '主题'];
 
 class HomePage extends StatefulWidget {
@@ -35,7 +34,6 @@ class _HomePageState extends State<HomePage>
   int _tab = 0;
   int _nav = 0;
 
-  /// 雾面带内高度（不含状态栏）：顶栏 54 + chip 栏 46。
   static const _kHeaderExtent = 100.0;
 
   static const _spring = SpringDescription(
@@ -108,9 +106,11 @@ class _HomePageState extends State<HomePage>
             ),
           ),
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
-          // 回顶部按钮：右上角骑在雾带下沿（球心 = 带底边）。
+          // 按钮下移留缝（15:23 修“箭头怎么在最上面”）：球顶离带底
+          // 12px，内容上滑先从带底这条缝穿过、再滑到按钮后面 ——
+          // 即 B 原意“内容从雾带和按钮之间穿过”。box 顶 = 球顶 - 20。
           Positioned(
-            top: headerExtent - 49,
+            top: headerExtent - 8,
             right: 16,
             child: FogButton(
               scrollListenable: _fabPx,
@@ -123,19 +123,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带（2026-10-20 15:02 修 “什么都没有了”）：
-  /// 旧版把羽化层写成 `SizedBox.expand` 挂在 Positioned(top/left/right)
-  /// 里 —— 该位置高度约束无界，expand 触发 infinite height 断言，
-  /// **整个头部子树（雾带+搜索+chips）渲染失败消失**。
-  /// 现改：外层 Stack 高度由 SafeArea(chips 列) 定义（有界），
-  /// 羽化层用 `Positioned.fill` 铺满 —— 永不出现无界约束。
-  /// · 恒定雾化：ShaderMask(dstIn) 把模糊+混色在底部 44px 内同步淡出；
-  /// · 搜索/chips 画在羽化层之上保持清晰。
+  /// 雾面带：恒定雾化 + ShaderMask(dstIn) 模糊/混色底部 44px 整体羽化；
+  /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
       child: Stack(
         children: [
-          // 羽化雾层（fill，随 Stack 尺寸走，高度有界）
           Positioned.fill(
             key: const Key('fog-band-blur'),
             child: ShaderMask(
@@ -163,7 +156,6 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 清晰内容层：定义头部高度（有界），画在雾层之上
           SafeArea(
             bottom: false,
             child: Column(
@@ -654,8 +646,6 @@ class _WidgetCard extends StatelessWidget {
   }
 }
 
-/// blurbgmix 混色层：#6B6B6B softLight 恒定 0.651，羽化由外层
-/// ShaderMask 对模糊+混色整体淡出。
 class _BandTintPainter extends CustomPainter {
   _BandTintPainter(this.alpha);
 
