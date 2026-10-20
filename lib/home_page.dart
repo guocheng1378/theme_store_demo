@@ -127,11 +127,11 @@ class _HomePageState extends State<HomePage>
   /// 羽化历史：44px（模糊被吃在 Tab 区，内容硬穿）→ 16px（21:30，
   /// Tab 底下有糊有雾，但 21:51 截图“雾化没做好”：过渡太急 +
   /// 奶白太淡、Banner 颜色穿透成色板）→ 24px（本笔：chip 已自带
-  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80→0.90→0.62、
-  /// 带 alpha 0.651→0.75→0.92（有效白雾 0.36→0.60→0.83→0.57，
-  /// 00:20 评审“雾不够密”加浓 → 00:21 评审“要密还要透，
-  /// 能透界面滑过的色”：奶白回落留透色 + 白 softLight 提密度、
-  /// 模糊 30→46 把形化成色雾）。
+  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→…→0.62→0.34、
+  /// 带 alpha 0.651→0.75→0.92（有效白雾 0.36→0.60→0.83→0.57→0.31，
+  /// 00:20 密 → 00:21 密且透 → 00:31 色跟内容走（参照真机主题
+  /// 商店）：奶白退薄纱不再主导、白 softLight 0.70 提密保色、
+  /// 模糊 46 化形为色雾 + backdrop 饱和 1.45 让透上的色更浓）。
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -156,9 +156,18 @@ class _HomePageState extends State<HomePage>
                 ],
               ).createShader(rect),
               child: BackdropFilter(
-                // 模糊 30→46：把滑过的内容化成纯色雾，形不可辨但色透得上来
-                // （00:21 评审“要密还要透，能透界面滑过的色”）
-                filter: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
+                // 模糊 46 化形为色雾 + 饱和度矩阵 1.45：色先变浓再被雾罩，
+                // 雾面颜色完全跟着穿过的内容走（00:31 评审“雾不是一种颜色
+                // 的，是根据穿过它的颜色变的”——参照真机主题商店效果）
+                filter: ImageFilter.compose(
+                  outer: const ColorFilter.matrix(<double>[
+                    1.35415, -0.32175, -0.0324, 0, 0,
+                    -0.09585, 1.12825, -0.0324, 0, 0,
+                    -0.09585, -0.32175, 1.4176, 0, 0,
+                    0, 0, 0, 1, 0,
+                  ]),
+                  inner: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
+                ),
                 // 不包 Stack：Stack 默认 fit=loose 会放开非定位子级约束，
                 // CustomPaint(无子级) size 被收成 0×0——tint（奶白+软光）
                 // 整层不画，只剩模糊，Banner 紫色直接穿透（23:29 截图）。
@@ -764,24 +773,25 @@ class _BandTintPainter extends CustomPainter {
 
   final double alpha;
 
-  /// 雾面着色三层：奶白 normal（留透色）+ 白 softLight（提密度
-  /// 不吞色）+ 灰 softLight（玻璃深度 0.30 不变）。
-  /// 00:21 评审“要密还要透，能透界面滑过的色”：奶白 0.90→0.62
-  /// 让滑过的界面色以淡彩透上，密度改由白 softLight 0.55 扛。
+  /// 雾面着色三层：薄奶白 normal 0.34（薄纱）+ 白 softLight 0.70
+  /// （提密保色）+ 灰 softLight（玻璃深度 0.30 不变）。
+  /// 00:31 评审“雾不是一种颜色的，是根据穿过它的颜色变的”：
+  /// 白色退到薄纱，雾面颜色由穿过的内容主导（配合 backdrop
+  /// 饱和度 1.45，透上来的色更浓、更接近真机主题商店）。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     final rect = Offset.zero & size;
-    // 1) 奶白雾：normal 白层，压色但留透——滑过的界面色仍读得出
-    //    （0.90→0.62，00:21 评审“要密还要透，能透界面滑过的色”）
+    // 1) 薄奶白：只压一层薄纱（0.62→0.34，00:31 评审“雾不是一种
+    //    颜色的，是根据穿过它的颜色变的”——白色不再主导，色跟内容走）
     final milk = Paint()
-      ..color = Colors.white.withValues(alpha: 0.62 * alpha);
+      ..color = Colors.white.withValues(alpha: 0.34 * alpha);
     canvas.drawRect(rect, milk);
-    // 2) 增密提亮：白 softLight——只提亮、不吞色，雾读作密，
-    //    底下颜色仍以淡彩透上来（密而不闷的主力层）
+    // 2) 增密提亮：白 softLight 0.55→0.70——提密度、保色相，
+    //    穿过什么颜色雾就透什么颜色，密而不闷
     final lift = Paint()
       ..blendMode = BlendMode.softLight
-      ..color = Colors.white.withValues(alpha: 0.55 * alpha);
+      ..color = Colors.white.withValues(alpha: 0.70 * alpha);
     canvas.drawRect(rect, lift);
     // 3) 玻璃深度：极轻灰 softLight（强度 0.30）
     const base = Color(0xFF6B6B6B);
