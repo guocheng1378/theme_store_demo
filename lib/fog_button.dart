@@ -5,20 +5,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// 雾面按钮 —— 小米**柔光玻璃**质感（2026-10-20 14:36 定调：
-/// “按钮是小米的柔光玻璃质感，并不是什么黑白”）：
-/// · 玻璃**永远是亮的**：恒定奶白薄纱（不随滚动变黑），滚动时白纱
-///   加浓 = 更奶更柔（柔光），彻底移除 darken/softLight 压黑两层
-///   （那两版做出了“黑白”观感，方向错）。
-/// · 球面阴影底黑减弱（0x33 → 0x14），顶部白高光保留，底部收边柔和。
-/// · 常驻细亮边（柔光玻璃签名）+ 托起时反光弧/辉光白上加白。
-/// ① 拖起 = 动画式拎起：px>4 立即触发（320/19，~0.3s 微回弹）
-///    上升 -16px，回顶落回 —— 与滑速无关。
-/// ② 变亮 = 奶白玻璃内提亮白 + 辉光/反光弧同步。
-/// ③ 慢雾 = 软弹簧（55/16，~0.6s），40px 起步，白纱慢慢加浓。
-/// ④ 模糊羽化：外圈 ShaderMask(dstIn) 径向淡出，无硬切线。
-/// ⑤ 三级模糊阶梯：+12σ6 → +6σ12 → 核心σ26；地面投影不动；
-///    图标恒白 + 重投影。
+/// 雾面按钮 —— 小米柔光玻璃质感（2026-10-20 15:11 微调，评审
+/// “有那感觉了，雾有点少也不能太多，快到按钮的时候按钮应该亮起来”）：
+/// · **接近度驱动变亮**：bright = 拎起 × clamp(px/50) —— 内容走向
+///   按钮（前 50px）时逐步亮起，到位全亮；慢滑随接近渐亮，快甩跟
+///   拎起弹簧一起亮；不再是滚动一开始就全亮。
+/// · **雾加一档**：奶白纱 0.20 → 0.32 封顶（不能太多，不再堆）。
+/// · 玻璃恒亮奶白，移除压黑两层；常驻细亮边 + 托起反光弧。
+/// · 拎起 = px>4 立即弹（320/19 ~0.3s 微回弹）上抬 -16px；
+///   慢雾 = 软弹簧（55/16 ~0.6s）40-130px 跟随，先亮后雾。
+/// · 模糊羽化：外圈 ShaderMask(dstIn) 径向淡出，无硬切线；
+///   三级阶梯 +12σ6 → +6σ12 → 核心σ26；地面投影不动；图标恒白。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
@@ -28,7 +25,8 @@ class FogButton extends StatefulWidget {
     this.icon = Icons.arrow_upward,
   });
 
-  /// 滚动像素（非负）。px>4 触发拎起；fog = clamp((px-40)/90)。
+  /// 滚动像素（非负）。px>4 触发拎起；亮 = 拎起 × clamp(px/50)；
+  /// fog = clamp((px-40)/90)。
   final ValueListenable<double> scrollListenable;
   final VoidCallback? onTap;
   final double size;
@@ -93,7 +91,11 @@ class _FogButtonState extends State<FogButton>
         animation: Listenable.merge([_c, _liftC, widget.scrollListenable]),
         builder: (context, _) {
           final double lift = _liftC.value;
-          final double bright = lift.clamp(0.0, 1.0).toDouble();
+          // 接近度：内容向按钮走的前 50px
+          final double prox =
+              (widget.scrollListenable.value / 50).clamp(0.0, 1.0).toDouble();
+          // 变亮 = 拎起 × 接近度（快到按钮才亮到位）
+          final double bright = (lift * prox).clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
           final double glow = bright * (1 - 0.5 * fog);
 
@@ -104,7 +106,6 @@ class _FogButtonState extends State<FogButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 氛围辉光（白，随拎起变亮）
                 Container(
                   width: s + 8 + 14 * bright,
                   height: s + 8 + 14 * bright,
@@ -120,7 +121,6 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                // 地面投影：阴影不动，球起缝隙变宽 = 托起
                 Container(
                   width: s,
                   height: s,
@@ -140,13 +140,11 @@ class _FogButtonState extends State<FogButton>
                     ],
                   ),
                 ),
-                // 拎起：整体上提 -16px·lift（微超调回弹）
                 Transform.translate(
                   offset: Offset(0, -16 * lift),
                   child: SizedBox(
                     width: s + 24,
                     height: s + 24,
-                    // 外圈模糊径向羽化
                     child: ClipOval(
                       child: ShaderMask(
                         blendMode: BlendMode.dstIn,
@@ -183,7 +181,6 @@ class _FogButtonState extends State<FogButton>
                                             child: Stack(
                                               alignment: Alignment.center,
                                               children: [
-                                                // 柔光玻璃面：径向渐隐收边
                                                 Positioned.fill(
                                                   child: ShaderMask(
                                                     shaderCallback: (rect) =>
@@ -203,14 +200,13 @@ class _FogButtonState extends State<FogButton>
                                                     blendMode: BlendMode.dstIn,
                                                     child: Stack(
                                                       children: [
-                                                        // 恒定奶白薄纱：
-                                                        // 玻璃永远是亮的
+                                                        // 恒定奶白薄纱
                                                         const ColoredBox(
                                                           color:
                                                               Color(0x14FFFFFF),
                                                         ),
                                                         // 球面：顶白高光，
-                                                        // 底黑减到 0x14（柔）
+                                                        // 底黑 0x14（柔）
                                                         const DecoratedBox(
                                                           decoration:
                                                               BoxDecoration(
@@ -236,26 +232,25 @@ class _FogButtonState extends State<FogButton>
                                                             ),
                                                           ),
                                                         ),
-                                                        // 托起提亮白（柔光）
+                                                        // 接近变亮白
                                                         ColoredBox(
                                                           color: Colors.white
                                                               .withOpacity(
                                                             0.30 * bright,
                                                           ),
                                                         ),
-                                                        // 慢雾 = 白纱加浓
-                                                        // （更奶更柔，不是变黑）
+                                                        // 慢雾：奶白纱
+                                                        // 加浓 0.32 封顶
                                                         ColoredBox(
                                                           color: Colors.white
                                                               .withOpacity(
-                                                            0.20 * fog,
+                                                            0.32 * fog,
                                                           ),
                                                         ),
                                                       ],
                                                     ),
                                                   ),
                                                 ),
-                                                // 图标恒白 + 重投影
                                                 Icon(
                                                   widget.icon,
                                                   size: 26,
@@ -268,12 +263,9 @@ class _FogButtonState extends State<FogButton>
                                                     ),
                                                   ],
                                                 ),
-                                                // 常驻细亮边 + 托起反光弧
-                                                // + 雾态辉光圈
                                                 Positioned.fill(
                                                   child: CustomPaint(
-                                                    painter:
-                                                        _GlassRimPainter(
+                                                    painter: _GlassRimPainter(
                                                       bright: bright,
                                                       fog: fog,
                                                     ),
@@ -304,10 +296,7 @@ class _FogButtonState extends State<FogButton>
   }
 }
 
-/// 柔光玻璃边：
-/// · 常驻 1px 细白亮边（柔光玻璃签名，随雾态稍提亮）；
-/// · 托起时顶部柔化反光弧；
-/// · 雾态软辉光圈。均无整圈硬黑环。
+/// 柔光玻璃边：常驻 1px 细白亮边 + 托起反光弧 + 雾态软辉光圈。
 class _GlassRimPainter extends CustomPainter {
   _GlassRimPainter({required this.bright, required this.fog});
 
@@ -320,7 +309,6 @@ class _GlassRimPainter extends CustomPainter {
     final r = size.shortestSide / 2;
     final rect = Rect.fromCircle(center: c, radius: r - 1.6);
 
-    // 常驻细亮边（柔光玻璃签名）
     final rimA =
         (0.42 + 0.30 * bright).clamp(0.0, 1.0).toDouble();
     final rim = Paint()
@@ -338,7 +326,6 @@ class _GlassRimPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawCircle(c, r - 1.4, rim);
 
-    // 托起时顶部柔化反光弧（随亮增强）
     final arcA =
         (0.34 * bright * (1 - 0.35 * fog)).clamp(0.0, 1.0).toDouble();
     if (arcA > 0.01) {
@@ -359,7 +346,6 @@ class _GlassRimPainter extends CustomPainter {
       canvas.drawArc(rect, math.pi, math.pi, false, arc);
     }
 
-    // 雾态软辉光圈
     if (fog > 0.02) {
       final glow = Paint()
         ..style = PaintingStyle.stroke
