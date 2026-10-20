@@ -12,7 +12,10 @@ import 'package:flutter/physics.dart';
 ///   +0x1A（→50% 封顶）—— 之前雾挂在 40px 后才起，静止态无雾，
 ///   深色内容一透就成“黑的”。现在任何状态都是奶白雾面，
 ///   深色底上也柔（柔光玻璃），滚动只做微调不改变基调。
-/// · 投影减淡（0x52/0x2E）不染球底；白纱+投影不再发黑。
+/// · **投影已全部移除**（2026-10-20 21:06 评审“按键的阴影要去掉，
+///   雾化感觉没了”）：球底两层黑投影 0x52/0x2E 会在奶白雾面下压出
+///   黑环，雾感被阴影吃掉；去掉后球体只剩雾纱+柔光+细白亮边，
+///   纯雾化悬浮，无任何黑色投影层。
 /// · 亮 = 拎起 × (0.6 + 0.4×接近度)：一滚就 60% 亮，50px 拉满；
 ///   拎起 = px>4 立即弹 -16px（~0.3s 微回弹）；慢雾弹簧 40-130px
 ///   只调浓淡。
@@ -82,7 +85,6 @@ class _FogButtonState extends State<FogButton>
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
-    final dpr = MediaQuery.of(context).devicePixelRatio;
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedBuilder(
@@ -120,25 +122,9 @@ class _FogButtonState extends State<FogButton>
                     ),
                   ),
                 ),
-                Container(
-                  width: s,
-                  height: s,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0x52000000),
-                        offset: const Offset(0, 8),
-                        blurRadius: 18,
-                      ),
-                      BoxShadow(
-                        color: const Color(0x2E000000),
-                        offset: Offset(0, 5 / dpr),
-                        blurRadius: 56 / dpr,
-                      ),
-                    ],
-                  ),
-                ),
+                // 黑投影层已移除（21:06 评审：阴影去掉，雾化感觉没了）——
+                // 从前这里压着 0x52/0x2E 两层黑色 BoxShadow，
+                // 球底黑环把奶白雾面衬得发硬；现在雾纱直接浮在柔光上。
                 Transform.translate(
                   offset: Offset(0, -16 * lift),
                   child: SizedBox(
