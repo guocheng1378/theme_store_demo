@@ -19,10 +19,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage>
-    // 两个 AnimationController（_tabC/_enterC），必须多 ticker
     with TickerProviderStateMixin {
   final _sc = ScrollController();
-  // 按钮用滚动像素自行拆拎起（px>4 触发）与慢雾（40-130px）。
   final _fabPx = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
@@ -37,7 +35,7 @@ class _HomePageState extends State<HomePage>
   int _tab = 0;
   int _nav = 0;
 
-  /// 雾面带内高度（不含状态栏）：顶栏 54（10+40+4）+ chip 栏 46（6+40）。
+  /// 雾面带内高度（不含状态栏）：顶栏 54 + chip 栏 46。
   static const _kHeaderExtent = 100.0;
 
   static const _spring = SpringDescription(
@@ -72,13 +70,11 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    // 雾面带总高 = 状态栏 + 顶栏 + chip 栏
     final headerExtent = topInset + _kHeaderExtent;
     return Scaffold(
       backgroundColor: const Color(0xFFF4F4F6),
       body: Stack(
         children: [
-          // 内容层：全屏滚动，从雾面带下方穿过被实时模糊
           Positioned.fill(
             child: RefreshCapsule(
               topOffset: headerExtent + 6,
@@ -111,14 +107,10 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 雾面带：恒定雾化 + 模糊羽化（底部 44px 同步淡出）。
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
-          // 回顶部按钮（2026-10-20 14:28 选 B）：右上角骑在雾带下沿 ——
-          // 球心 = 带底边：上半截浸在雾带里（被羽化层包），下半截压在
-          // 清晰内容上；内容滚动时从带边这条缝穿过，按钮骑缝。
-          // （原 Scaffold 默认 endFloat 右下角位置废弃。）
+          // 回顶部按钮：右上角骑在雾带下沿（球心 = 带底边）。
           Positioned(
-            top: headerExtent - 49, // box 内球心居中：49 = 20 + 58/2 - 1
+            top: headerExtent - 49,
             right: 16,
             child: FogButton(
               scrollListenable: _fabPx,
@@ -131,18 +123,22 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 雾面带：
-  /// · 恒定雾化（无渐入事件 = 无“拖蒙版”读感），内容实时穿带。
-  /// · 模糊羽化：ShaderMask(dstIn) 把模糊+混色在底部 44px 内同步淡出，
-  ///   硬线消失，内容从清晰 → 渐糊平滑穿过。
-  /// · 搜索/chips 画在羽化层之上，保持清晰。
+  /// 雾面带（2026-10-20 15:02 修 “什么都没有了”）：
+  /// 旧版把羽化层写成 `SizedBox.expand` 挂在 Positioned(top/left/right)
+  /// 里 —— 该位置高度约束无界，expand 触发 infinite height 断言，
+  /// **整个头部子树（雾带+搜索+chips）渲染失败消失**。
+  /// 现改：外层 Stack 高度由 SafeArea(chips 列) 定义（有界），
+  /// 羽化层用 `Positioned.fill` 铺满 —— 永不出现无界约束。
+  /// · 恒定雾化：ShaderMask(dstIn) 把模糊+混色在底部 44px 内同步淡出；
+  /// · 搜索/chips 画在羽化层之上保持清晰。
   Widget _fogHeader() {
     return ClipRect(
       child: Stack(
         children: [
-          SizedBox.expand(
+          // 羽化雾层（fill，随 Stack 尺寸走，高度有界）
+          Positioned.fill(
+            key: const Key('fog-band-blur'),
             child: ShaderMask(
-              key: const Key('fog-band-blur'),
               blendMode: BlendMode.dstIn,
               shaderCallback: (rect) => LinearGradient(
                 begin: Alignment.topCenter,
@@ -160,19 +156,14 @@ class _HomePageState extends State<HomePage>
               ).createShader(rect),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        key: const Key('fog-band'),
-                        painter: _BandTintPainter(0.651),
-                      ),
-                    ),
-                  ],
+                child: CustomPaint(
+                  key: const Key('fog-band'),
+                  painter: _BandTintPainter(0.651),
                 ),
               ),
             ),
           ),
+          // 清晰内容层：定义头部高度（有界），画在雾层之上
           SafeArea(
             bottom: false,
             child: Column(
@@ -185,7 +176,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 搜索：全宽单胶囊、图标+文字左对齐（对照官方截图）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -203,7 +193,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// chip 组（1:1）：选中黑胶囊 / 未选白胶囊，弹簧过渡。
   Widget _tabBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -251,11 +240,10 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 内容区（对照官方截图）：① 锁屏高卡 ② 分区头 ③ 小部件方卡。
   Widget _feed(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final w = (c.maxWidth - 20) / 3; // 3 列，间距 10
+        final w = (c.maxWidth - 20) / 3;
         Widget enter(int i, Widget child) => AnimatedBuilder(
           animation: _enterC,
           builder: (_, __) => SpringEnter(
@@ -325,13 +313,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 底栏（1:1）：浮起圆角玻璃面板，选中纯黑、未选 80% 黑。
   Widget _bottomBar() {
     const icons = [
-      Icons.format_paint, // 首页
-      Icons.dashboard, // 分类
-      Icons.shield, // 每日精选
-      Icons.person_rounded, // 我的
+      Icons.format_paint,
+      Icons.dashboard,
+      Icons.shield,
+      Icons.person_rounded,
     ];
     const labels = ['首页', '分类', '每日精选', '我的'];
     return Padding(
@@ -395,7 +382,6 @@ class _HomePageState extends State<HomePage>
   }
 }
 
-/// 卡片素材：标题 + 渐变 + 迷你组件文案（官方截图取值）。
 class _ThemeArt {
   const _ThemeArt(this.title, this.colors, this.chips);
 
@@ -404,7 +390,6 @@ class _ThemeArt {
   final List<String> chips;
 }
 
-/// 推荐：3 张锁屏高卡（9:16 构图）。
 const _locks = <_ThemeArt>[
   _ThemeArt(
     '罗小黑 清凉泳池',
@@ -423,7 +408,6 @@ const _locks = <_ThemeArt>[
   ),
 ];
 
-/// 小部件：3×2 方卡。
 const _widgets = <_ThemeArt>[
   _ThemeArt(
     '蜘蛛侠 酷感雨雾',
@@ -457,7 +441,6 @@ const _widgets = <_ThemeArt>[
   ),
 ];
 
-/// 锁屏高卡。
 class _LockCard extends StatelessWidget {
   const _LockCard(this.art, this.w);
 
@@ -591,7 +574,6 @@ class _LockCard extends StatelessWidget {
   }
 }
 
-/// 小部件方卡。
 class _WidgetCard extends StatelessWidget {
   const _WidgetCard(this.art, this.w);
 
