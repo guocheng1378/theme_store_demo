@@ -5,54 +5,34 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// 滚动方向迟滞锁存：上滑累计 >16px 点亮、下滑累计 <-16px 熄灭，中间回差防抖。
-class ScrollLatch {
-  ScrollLatch({this.threshold = 16});
-
-  final double threshold;
-  double _ref = 0;
-  bool lit = false;
-
-  void update(double px, void Function(bool) on) {
-    final d = px - _ref;
-    if (!lit && d > threshold) {
-      lit = true;
-      _ref = px;
-      on(true);
-    } else if (lit && d < -threshold) {
-      lit = false;
-      _ref = px;
-      on(false);
-    }
-  }
-}
-
-/// 雾面按钮 —— 字节码真值 + 多轮评审补强：
-/// ① 结构 = 开关式系统模糊(toq)，**三级模糊阶梯羽化**（评审“很明显硬口”）：
-///    +12px σ6 → +6px σ12 → 核心 σ26。每级跳变 ≤2.2×，内容从清晰到
-///    主糊分三步缓坡，圆周上不再存在一眼可见的单步硬跳（旧版两级 8→26
-///    跳变 3.2×，亮底上就是一条硬口）。
-/// ② 混色 = ColorBlendToken.l 三层（darken / luminosity / softLight），
+/// 雾面按钮 —— 时序按用户 2026-10-20 描述重排：
+/// “界面滑上去 → 按钮被拖起变亮 → 然后慢慢模糊”，
+/// 顶带要晚于按钮，不能读成“整块蒙版被拖上来”。
+/// ① 拖起：滚动 0→40px 线性上提 -12px（内容滑、按钮被拎起），
+///    阴影留在地面 → 缝隙变宽 = 升起感（不再用二元 latch 硬跳）。
+/// ② 变亮：同 0→40px 玻璃内白提升（0.30）+ 辉光/反光弧同步起，
+///    按钮先“亮起来”。
+/// ③ 慢慢模糊：雾态目标 = clamp((px-40)/90)，从 40px 才开始、90px
+///    走完，且用软弹簧（90/20，临界阻尼 ≈0.4s 收敛）跟随，
+///    “亮起 → 后慢雾”两段式；回滑自动逆放。
+/// ④ 结构 = 开关式系统模糊(toq)，三级模糊阶梯：+12px σ6 → +6px σ12
+///    → 核心 σ26，每级跳变 ≤2.2×，圆周无单步硬跳。
+/// ⑤ 混色 = ColorBlendToken.l 三层（darken/luminosity/softLight），
 ///    每层径向渐变 Shader 逐像素 alpha（0.72 内满 → 圆周透），
-///    blendMode 逐像素直绘 framebuffer —— 不进 saveLayer，不破模糊。
-/// ③ 球面明暗：上白(0x2E) → 中透 → 下黑(0x33) 顶光源，径向渐隐收边。
-/// ④ 浮起感（评审“按钮没有浮起来”）：
-///    - 接触阴影 #8C000000/18px/下坠8px —— 从球缘下方探出，形成
-///      “球在地面投影”的间隙（旧阴影藏在羽化环里，和球连成一坨）；
-///    - 环境光 #59000000/56px/下坠5px；
-///    - 点亮时球体微升 -2.5px（阴影不动，缝隙变宽 = 升起感）；
-///    - 辉光降为 0.28（旧 0.40 把球压成贴纸）。
-/// ⑤ 图标恒白 + 重投影(0x8A/10px)；顶部反光弧 1.2px/0x55 柔化。
+///    blendMode 逐像素直绘 framebuffer —— 不进 saveLayer。
+/// ⑥ 球面明暗 + 地面投影（#8C000000/18px/坠8 + #59000000/56px/坠5）。
+/// ⑦ 图标恒白 + 重投影(0x8A/10px)；顶部反光弧 1.2px 柔化。
 class FogButton extends StatefulWidget {
   const FogButton({
     super.key,
-    required this.litListenable,
+    required this.scrollListenable,
     this.onTap,
     this.size = 58,
     this.icon = Icons.arrow_upward,
   });
 
-  final ValueListenable<bool> litListenable;
+  /// 滚动像素（非负）。内部拆成 lift/bright（0-40px）与 fog（40-130px）。
+  final ValueListenable<double> scrollListenable;
   final VoidCallback? onTap;
   final double size;
   final IconData icon;
@@ -63,29 +43,34 @@ class FogButton extends StatefulWidget {
 
 class _FogButtonState extends State<FogButton>
     with SingleTickerProviderStateMixin {
-  static const _spring =
-      SpringDescription(mass: 1, stiffness: 400, damping: 26);
+  // 软弹簧：临界阻尼、约 0.4s 收敛 —— “慢慢模糊”的手感来源。
+  static const _fogSpring =
+      SpringDescription(mass: 1, stiffness: 90, damping: 20);
 
   late final AnimationController _c = AnimationController(vsync: this);
+  double _target = 0;
 
   @override
   void initState() {
     super.initState();
-    widget.litListenable.addListener(_sync);
+    widget.scrollListenable.addListener(_onScroll);
+    _onScroll();
   }
 
-  void _sync() {
-    _c.animateWith(SpringSimulation(
-      _spring,
-      _c.value,
-      widget.litListenable.value ? 1.0 : 0.0,
-      _c.velocity,
-    ));
+  void _onScroll() {
+    final t = ((widget.scrollListenable.value - 40) / 90)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    if ((t - _target).abs() < 0.003) return;
+    _target = t;
+    _c.animateWith(
+      SpringSimulation(_fogSpring, _c.value, t, _c.velocity),
+    );
   }
 
   @override
   void dispose() {
-    widget.litListenable.removeListener(_sync);
+    widget.scrollListenable.removeListener(_onScroll);
     _c.dispose();
     super.dispose();
   }
@@ -97,9 +82,17 @@ class _FogButtonState extends State<FogButton>
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedBuilder(
-        animation: _c,
+        animation: Listenable.merge([_c, widget.scrollListenable]),
         builder: (context, _) {
-          final double v = _c.value.clamp(0.0, 1.0).toDouble();
+          final double px = widget.scrollListenable.value;
+          // 拖起 + 变亮：0→40px 即时跟随（内容滑、按钮被拎起）
+          final double lift = (px / 40).clamp(0.0, 1.0).toDouble();
+          final double bright = lift;
+          // 慢雾：40px 起步，软弹簧慢慢跟
+          final double fog = _c.value.clamp(0.0, 1.0).toDouble();
+          // 亮度被雾接管：亮起后随雾加深逐渐收回
+          final double glow = bright * (1 - 0.6 * fog);
+
           return SizedBox(
             width: s + 40,
             height: s + 40,
@@ -107,23 +100,23 @@ class _FogButtonState extends State<FogButton>
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 氛围辉光（点亮态，0.28 峰值：只当氛围，不压平球体）
+                // 氛围辉光：随“变亮”起来、被雾慢慢吹淡
                 Container(
-                  width: s + 8 + 16 * v,
-                  height: s + 8 + 16 * v,
+                  width: s + 8 + 14 * bright,
+                  height: s + 8 + 14 * bright,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
-                      radius: 0.5 + 0.12 * v,
+                      radius: 0.5 + 0.1 * bright,
                       colors: [
-                        Colors.white.withOpacity(0.28 * v),
-                        Colors.white.withOpacity(0.12 * v),
+                        Colors.white.withOpacity(0.34 * glow),
+                        Colors.white.withOpacity(0.14 * glow),
                         Colors.transparent,
                       ],
                     ),
                   ),
                 ),
-                // 地面投影：接触阴影从球缘下探 8px（球起缝隙）+ 宽环境光
+                // 地面投影：阴影不动，球起缝隙变宽 = 升起感
                 Container(
                   width: s,
                   height: s,
@@ -143,9 +136,9 @@ class _FogButtonState extends State<FogButton>
                     ],
                   ),
                 ),
-                // 点亮微升：球体上移，阴影留在地面 → 缝隙变宽 = 升起感
+                // 拖起：整体上提 -12px·lift（阴影留地面）
                 Transform.translate(
-                  offset: Offset(0, -2.5 * v),
+                  offset: Offset(0, -12 * lift),
                   child: SizedBox(
                     width: s + 24,
                     height: s + 24,
@@ -175,9 +168,8 @@ class _FogButtonState extends State<FogButton>
                                           child: Stack(
                                             alignment: Alignment.center,
                                             children: [
-                                              // 玻璃底 + 球面：径向渐隐收边
-                                              // （0.72 内满 → 圆周透），
-                                              // ShaderMask 只包普通 alpha 层
+                                              // 玻璃底 + 提亮白 + 球面：
+                                              // 径向渐隐收边（0.72 内满）
                                               Positioned.fill(
                                                 child: ShaderMask(
                                                   shaderCallback: (rect) =>
@@ -196,12 +188,24 @@ class _FogButtonState extends State<FogButton>
                                                   ).createShader(rect),
                                                   blendMode: BlendMode.dstIn,
                                                   child: Stack(
-                                                    children: const [
-                                                      ColoredBox(
+                                                    children: [
+                                                      const ColoredBox(
                                                         color:
                                                             Color(0x1F000000),
                                                       ),
-                                                      DecoratedBox(
+                                                      // 变亮层：随 lift 起、
+                                                      // 被 fog 收回
+                                                      ColoredBox(
+                                                        color: Colors.white
+                                                            .withOpacity(
+                                                          0.30 *
+                                                              bright *
+                                                              (1 -
+                                                                  0.75 *
+                                                                      fog),
+                                                        ),
+                                                      ),
+                                                      const DecoratedBox(
                                                         decoration:
                                                             BoxDecoration(
                                                           gradient:
@@ -230,12 +234,11 @@ class _FogButtonState extends State<FogButton>
                                                   ),
                                                 ),
                                               ),
-                                              // 三层混色：径向 Shader 逐像素
-                                              // 控 alpha，直绘 framebuffer
+                                              // 三层混色（随雾态），直绘
                                               Positioned.fill(
                                                 child: CustomPaint(
                                                   painter:
-                                                      _MixLayersPainter(v),
+                                                      _MixLayersPainter(fog),
                                                 ),
                                               ),
                                               // 图标恒白 + 重投影
@@ -253,8 +256,10 @@ class _FogButtonState extends State<FogButton>
                                               ),
                                               Positioned.fill(
                                                 child: CustomPaint(
-                                                  painter:
-                                                      _BloomStrokePainter(v),
+                                                  painter: _BloomStrokePainter(
+                                                    bright: bright,
+                                                    fog: fog,
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -281,9 +286,8 @@ class _FogButtonState extends State<FogButton>
   }
 }
 
-/// ColorBlendToken.l 三层混色（alpha 随 v 爬升），
-/// 每层用径向渐变 Shader 把 alpha 推到圆周归零 —— 混色边界化开，
-/// 同时保持 blendMode 在 framebuffer 上逐像素直绘（不进 saveLayer）。
+/// ColorBlendToken.l 三层混色（alpha 随雾态 fog 爬升），
+/// 每层径向渐变 Shader 把 alpha 推到圆周归零，blendMode 逐像素直绘。
 class _MixLayersPainter extends CustomPainter {
   _MixLayersPainter(this.v);
 
@@ -318,45 +322,52 @@ class _MixLayersPainter extends CustomPainter {
   bool shouldRepaint(_MixLayersPainter old) => old.v != v;
 }
 
-/// 顶部柔化反光弧（1.2px/0x55/2.5 蒙版，高光非实线）
-/// + 点亮态软辉光圈。整圈环线已移除（评审“界限”）。
+/// 顶部柔化反光弧 + 软辉光圈：强度随“亮”起、被“雾”压，
+/// 整圈实线环已移除（评审“界限”）。
 class _BloomStrokePainter extends CustomPainter {
-  _BloomStrokePainter(this.v);
+  _BloomStrokePainter({required this.bright, required this.fog});
 
-  final double v;
+  final double bright;
+  final double fog;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rimA =
+        (0.34 * bright * (1 - 0.45 * fog)).clamp(0.0, 1.0).toDouble();
+    if (rimA <= 0.01 && fog <= 0.02) return;
     final c = size.center(Offset.zero);
     final r = size.shortestSide / 2;
     final rect = Rect.fromCircle(center: c, radius: r - 1.6);
 
-    final rim = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..shader = SweepGradient(
-        colors: const [
-          Color(0x55FFFFFF),
-          Color(0x1AFFFFFF),
-          Color(0x00FFFFFF),
-          Color(0x00FFFFFF),
-          Color(0x55FFFFFF),
-        ],
-        transform: const GradientRotation(-math.pi / 2),
-      ).createShader(rect)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
-    canvas.drawArc(rect, math.pi, math.pi, false, rim);
+    if (rimA > 0.01) {
+      final rim = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..shader = SweepGradient(
+          colors: [
+            Color.fromRGBO(255, 255, 255, rimA),
+            Color.fromRGBO(255, 255, 255, rimA * 0.3),
+            Colors.transparent,
+            Colors.transparent,
+            Color.fromRGBO(255, 255, 255, rimA),
+          ],
+          transform: const GradientRotation(-math.pi / 2),
+        ).createShader(rect)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+      canvas.drawArc(rect, math.pi, math.pi, false, rim);
+    }
 
-    if (v > 0.02) {
+    if (fog > 0.02) {
       final glow = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white.withOpacity(0.28 * v)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 3 * v);
+        ..color = Colors.white.withOpacity(0.28 * fog)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 3 * fog);
       canvas.drawCircle(c, r - 1, glow);
     }
   }
 
   @override
-  bool shouldRepaint(_BloomStrokePainter old) => old.v != v;
+  bool shouldRepaint(_BloomStrokePainter old) =>
+      old.bright != bright || old.fog != fog;
 }

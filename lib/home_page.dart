@@ -21,11 +21,11 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     // 两个 AnimationController（_tabC/_enterC），必须多 ticker
     with TickerProviderStateMixin {
-  final _latch = ScrollLatch();
-  final _lit = ValueNotifier<bool>(false);
   final _sc = ScrollController();
-  // 雾面带浮现进度 0..1：滚动 0→24px 线性映射（顶部 0，深滚 1）。
+  // 雾面带浮现进度 0..1（8px 起步、48px 满 —— 晚于按钮，不抢戏）。
   final _band = ValueNotifier<double>(0);
+  // 按钮用滚动像素自行拆 lift/bright（0-40px）与 fog（40-130px）。
+  final _fabPx = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
     vsync: this,
@@ -54,6 +54,7 @@ class _HomePageState extends State<HomePage>
     _enterC.dispose();
     _sc.dispose();
     _band.dispose();
+    _fabPx.dispose();
     super.dispose();
   }
 
@@ -88,12 +89,14 @@ class _HomePageState extends State<HomePage>
                 await Future<void>.delayed(const Duration(milliseconds: 1200));
               },
               child: NotificationListener<ScrollNotification>(
-                // 迟滞锁存：上滑 >16px 点亮雾面按钮，下滑 <-16px 熄灭
+                // 时序：内容先走 → 按钮 0-40px 拖起变亮 → 40-130px 慢雾
+                // → 顶带 8-48px 晚跟（不能读成“整块蒙版被拖上来”）。
                 onNotification: (n) {
-                  // 雾面带进度：0→24px 线性爬升，负过冲（下拉刷新）钳 0。
+                  final px = n.metrics.pixels;
+                  // 顶带进度：8px 起步、48px 满；负过冲（下拉）钳 0。
                   _band.value =
-                      (n.metrics.pixels / 24).clamp(0.0, 1.0).toDouble();
-                  _latch.update(n.metrics.pixels, (b) => _lit.value = b);
+                      ((px - 8) / 40).clamp(0.0, 1.0).toDouble();
+                  _fabPx.value = px < 0 ? 0.0 : px;
                   return false;
                 },
                 child: CustomScrollView(
@@ -118,12 +121,15 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ),
-          // 雾面带：状态栏 → chip 栏底，随滚动浮现（顶部透明）。
+          // 雾面带：状态栏 → chip 栏底，随滚动晚跟渐入（顶部透明）。
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
         ],
       ),
       bottomNavigationBar: _bottomBar(),
-      floatingActionButton: FogButton(litListenable: _lit, onTap: _toTop),
+      floatingActionButton: FogButton(
+        scrollListenable: _fabPx,
+        onTap: _toTop,
+      ),
     );
   }
 
