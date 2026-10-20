@@ -127,8 +127,9 @@ class _HomePageState extends State<HomePage>
   /// 羽化历史：44px（模糊被吃在 Tab 区，内容硬穿）→ 16px（21:30，
   /// Tab 底下有糊有雾，但 21:51 截图“雾化没做好”：过渡太急 +
   /// 奶白太淡、Banner 颜色穿透成色板）→ 24px（本笔：chip 已自带
-  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80、
-  /// 带 alpha 0.651→0.75（有效白雾 0.36→0.60）。
+  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80→0.90、
+  /// 带 alpha 0.651→0.75→0.92（有效白雾 0.36→0.60→0.83，
+  /// 00:20 评审“雾不够密”：加浓一档）。
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -161,7 +162,7 @@ class _HomePageState extends State<HomePage>
                 // 砂点颗粒已按 00:15 评审要求移除，只留雾面 tint。
                 child: CustomPaint(
                   key: const Key('fog-band'),
-                  painter: _BandTintPainter(0.75),
+                  painter: _BandTintPainter(0.92),
                 ),
               ),
             ),
@@ -760,16 +761,17 @@ class _BandTintPainter extends CustomPainter {
   final double alpha;
 
   /// 雾面着色：奶白提亮层 + 极轻灰软光层。
-  /// 奶白 0.55→0.80、带 alpha 0.651→0.75（21:51 评审“雾化没做好”：
-  /// 有效白雾 0.36→0.60，紫色 Banner 不再穿透成色板，顶栏读作
-  /// 奶白雾面玻璃）；灰 softLight 强度保持 0.30 保留玻璃深度。
+  /// 奶白 0.55→0.80→0.90、带 alpha 0.651→0.75→0.92
+  /// （21:51 评审“雾化没做好”→00:20 评审“雾不够密”：
+  /// 有效白雾 0.36→0.60→0.83，顶栏读作奶白雾面玻璃）；
+  /// 灰 softLight 强度保持 0.30 保留玻璃深度。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     final rect = Offset.zero & size;
     // 1) 奶白雾：normal 白层，浅色底上不再发黑
     final milk = Paint()
-      ..color = Colors.white.withValues(alpha: 0.80 * alpha);
+      ..color = Colors.white.withValues(alpha: 0.90 * alpha);
     canvas.drawRect(rect, milk);
     // 2) 玻璃深度：极轻灰 softLight（强度 0.30）
     const base = Color(0xFF6B6B6B);
