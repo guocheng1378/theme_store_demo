@@ -22,7 +22,7 @@ class _HomePageState extends State<HomePage>
   final _sc = ScrollController();
   final _fabPx = ValueNotifier<double>(0);
   // 全按钮统一高亮信号：界面内容快穿过谁，谁就高亮
-  // （接近度 clamp(px/50) 驱动搜索/chips/悬浮球，回顶熄灭）。
+  // （接近度 clamp(px/50) 驱动搜索/chips/查看更多/导航条/悬浮球，回顶熄灭）。
   final _prox = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
@@ -168,7 +168,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 搜索胶囊：内容穿过时白描边+柔光高亮（接近度驱动）。
+  /// 搜索胶囊（磨砂玻璃）：内容穿过时白描边+柔光高亮（接近度驱动）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -181,7 +181,7 @@ class _HomePageState extends State<HomePage>
                 final h = _prox.value;
                 return Container(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       if (h > 0.01)
                         BoxShadow(
@@ -192,7 +192,7 @@ class _HomePageState extends State<HomePage>
                     ],
                     border: Border.all(
                       color: Colors.white.withOpacity(
-                        (0.16 + 0.44 * h).clamp(0.0, 1.0),
+                        (0.10 + 0.55 * h).clamp(0.0, 1.0),
                       ),
                       width: 1,
                     ),
@@ -223,7 +223,8 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// chip：内容穿过时同步白柔光（与搜索/悬浮球同源信号）。
+  /// chip（磨砂玻璃）：未选中=半透白玻璃透出雾底；选中=实心黑胶囊（小米选中态）；
+  /// 内容穿过时白柔光+描边增亮（与搜索/查看更多/导航条/悬浮球同源信号）。
   Widget _chip(int i) {
     return AnimatedBuilder(
       animation: Listenable.merge([_tabC, _prox]),
@@ -231,7 +232,7 @@ class _HomePageState extends State<HomePage>
         final t = (1 - (i - _tabC.value).abs()).clamp(0.0, 1.0).toDouble();
         final h = _prox.value;
         final bg =
-            Color.lerp(const Color(0xD9FFFFFF), const Color(0xD9000000), t);
+            Color.lerp(const Color(0x99FFFFFF), const Color(0xE6000000), t);
         final fg = Color.lerp(const Color(0xE6000000), Colors.white, t);
         return Padding(
           padding: const EdgeInsets.only(right: 8),
@@ -246,7 +247,7 @@ class _HomePageState extends State<HomePage>
                 color: bg,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.10 + 0.50 * h),
+                  color: Colors.white.withOpacity(0.25 + 0.55 * h),
                   width: 1,
                 ),
                 boxShadow: [
@@ -313,17 +314,54 @@ class _HomePageState extends State<HomePage>
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  '查看更多',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: const Color(0x8A000000),
+                // 查看更多（磨砂玻璃胶囊）：内容穿过时提亮
+                AnimatedBuilder(
+                  animation: _prox,
+                  builder: (context, child) {
+                    final h = _prox.value;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {},
+                      child: Container(
+                        height: 30,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.60 + 0.30 * h),
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.35 + 0.45 * h),
+                          ),
+                          boxShadow: [
+                            if (h > 0.01)
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.40 * h),
+                                blurRadius: 9,
+                              ),
+                          ],
+                        ),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '查看更多',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xE6000000),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: Color(0x8A000000),
+                      ),
+                    ],
                   ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: Color(0x8A000000),
                 ),
               ],
             ),
@@ -346,6 +384,8 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// 底部导航（磨砂玻璃条）：真背景模糊 + 半透明白玻璃；
+  /// 内容穿过时整条提亮（白填充/描边随 _prox 增亮 + 白柔光）。
   Widget _bottomBar() {
     const icons = [
       Icons.format_paint,
@@ -356,60 +396,81 @@ class _HomePageState extends State<HomePage>
     const labels = ['首页', '分类', '每日精选', '我的'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0x0F000000)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 16,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Material(
-          color: const Color(0xF2FFFFFF),
-          borderRadius: BorderRadius.circular(24),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            height: 61.3,
-            child: Row(
-              children: [
-                for (var i = 0; i < labels.length; i++)
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _nav = i),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            icons[i],
-                            size: 22,
-                            color: i == _nav
-                                ? const Color(0xFF000000)
-                                : const Color(0xCC000000),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            labels[i],
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight:
-                                  i == _nav ? FontWeight.w700 : FontWeight.w400,
-                              color: i == _nav
-                                  ? const Color(0xFF000000)
-                                  : const Color(0xCC000000),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      child: AnimatedBuilder(
+        animation: _prox,
+        builder: (context, _) {
+          final h = _prox.value;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.30 + 0.50 * h),
+              ),
+              boxShadow: [
+                const BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 4),
+                ),
+                if (h > 0.01)
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.50 * h),
+                    blurRadius: 14,
+                    spreadRadius: 1,
                   ),
               ],
             ),
-          ),
-        ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Material(
+                  color: Colors.white.withOpacity(0.60 + 0.30 * h),
+                  borderRadius: BorderRadius.circular(24),
+                  clipBehavior: Clip.antiAlias,
+                  child: SizedBox(
+                    height: 61.3,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < labels.length; i++)
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _nav = i),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    icons[i],
+                                    size: 22,
+                                    color: i == _nav
+                                        ? const Color(0xFF000000)
+                                        : const Color(0xCC000000),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    labels[i],
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: i == _nav
+                                          ? FontWeight.w700
+                                          : FontWeight.w400,
+                                      color: i == _nav
+                                          ? const Color(0xFF000000)
+                                          : const Color(0xCC000000),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
