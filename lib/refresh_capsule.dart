@@ -14,10 +14,11 @@ import 'package:flutter/physics.dart';
 /// ③ 退出 = 入场逆放；胶囊色 #D9FFFFFF【资源】。
 /// ④ topOffset：胶囊起始 Y（头部方案下传头部高度，从雾面带下缘探出）。
 /// ⑤ 两个 AnimationController（_c/_e）→ 必须 TickerProviderStateMixin。
-/// ⑥ 评审“与界面有界限/没浮起来”补强：
+/// ⑥ 评审“与界面有界限/没浮起来”：
 ///    - 去掉 Border.all 白描边（手画的圈）；
-///    - 双层羽化：外圈(+6px) σ8 过渡环 → 内圈 σ22 主糊，模糊不再刀切；
-///    - 投影两层加码：#3D000000/16px/坠6 + #1A000000/30px/坠10，
+///    - 三级模糊阶梯（评审“很明显硬口”）：+8σ5 → +4σ11 → 核心σ22，
+///      每级跳变 ≤2.2×，圆周无单步硬跳；
+///    - 投影：#3D000000/14px/坠5 从胶囊缘下探 + #1A000000/30px/坠10，
 ///      独立投影层绘制（不进遮罩，阴影完整）。
 class RefreshCapsule extends StatefulWidget {
   const RefreshCapsule({
@@ -158,27 +159,48 @@ class RefreshCapsuleState extends State<RefreshCapsule>
     );
   }
 
+  /// 胶囊：地面投影 + 三级模糊阶梯 + 真值 #D9FFFFFF 平色（无描边）。
   Widget _capsule(double h, double w,
       {required bool showSpinner, double scale = 1}) {
     final r = h / 2;
-    final body = ClipRRect(
-      borderRadius: BorderRadius.circular(r),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: SizedBox(
-          width: w,
-          height: h,
-          child: Center(
-            child: showSpinner
-                ? const CupertinoActivityIndicator(radius: 7)
-                : Transform.scale(
-                    scale: scale,
-                    child: const Icon(
-                      Icons.arrow_downward,
-                      size: 18,
-                      color: Color(0x8A000000),
+    // 核心：真值填色 + 图标（单次渲染，无重复层）
+    final core = SizedBox(
+      width: w,
+      height: h,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(r),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: Container(
+            color: const Color(0xD9FFFFFF), // 真值 #D9FFFFFF
+            child: Center(
+              child: showSpinner
+                  ? const CupertinoActivityIndicator(radius: 7)
+                  : Transform.scale(
+                      scale: scale,
+                      child: const Icon(
+                        Icons.arrow_downward,
+                        size: 18,
+                        color: Color(0x8A000000),
+                      ),
                     ),
-                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+    // 阶梯 2：+4px σ11
+    final mid = SizedBox(
+      width: w + 8,
+      height: h + 8,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular((h + 8) / 2),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 11, sigmaY: 11),
+          child: SizedBox(
+            width: w + 8,
+            height: h + 8,
+            child: Center(child: core),
           ),
         ),
       ),
@@ -188,7 +210,7 @@ class RefreshCapsuleState extends State<RefreshCapsule>
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // 独立投影层（不进遮罩，阴影完整；两层加码 = 浮起感）
+        // 独立投影层（不进遮罩，阴影完整；接触阴影从胶囊缘下探）
         Container(
           width: w,
           height: h,
@@ -197,8 +219,8 @@ class RefreshCapsuleState extends State<RefreshCapsule>
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.24),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
               ),
               BoxShadow(
                 color: Colors.black.withOpacity(0.10),
@@ -208,33 +230,18 @@ class RefreshCapsuleState extends State<RefreshCapsule>
             ],
           ),
         ),
-        // 羽化外圈：+6px σ8 过渡环，模糊不再刀切（去描边后的边界融合）
+        // 阶梯 1（最外）：+8px σ5 —— 单步跳变 ≤5σ，圆周无硬口
         SizedBox(
-          width: w + 12,
-          height: h + 12,
+          width: w + 16,
+          height: h + 16,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular((h + 12) / 2),
+            borderRadius: BorderRadius.circular((h + 16) / 2),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
               child: SizedBox(
-                width: w + 12,
-                height: h + 12,
-                child: Center(child: body),
-              ),
-            ),
-          ),
-        ),
-        // 主体：真值 #D9FFFFFF 平色（描边已删）
-        SizedBox(
-          width: w,
-          height: h,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(r),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-              child: Container(
-                color: const Color(0xD9FFFFFF), // 真值 #D9FFFFFF
-                child: body,
+                width: w + 16,
+                height: h + 16,
+                child: Center(child: mid),
               ),
             ),
           ),
