@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package/flutter/physics.dart';
+import 'package:flutter/physics.dart';
 
 /// 雾面按钮 —— 小米柔光玻璃（2026-10-20 15:31 评审
 /// “还是黑的没有雾，能把箭头去掉吗”）：
