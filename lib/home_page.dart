@@ -177,6 +177,8 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// 搜索：全宽单胶囊、图标+文字左对齐（对照 2026-10-20 官方截图，
+  /// 官方顶栏无「签到」副钮，搜索横贯整行）。
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
@@ -188,13 +190,6 @@ class _HomePageState extends State<HomePage>
               icon: Icons.search,
               onTap: () {},
             ),
-          ),
-          const SizedBox(width: 10),
-          CapsuleButton(
-            label: '签到',
-            icon: Icons.card_giftcard,
-            dense: true,
-            onTap: () {},
           ),
         ],
       ),
@@ -250,32 +245,79 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// 内容区（2026-10-20 对照官方截图重构）：
+  /// ① 推荐 = 一行 3 张锁屏高卡（9:16 预览 + 大时钟，标题在卡下）；
+  /// ② 分区头「精选小部件 + 查看更多」；
+  /// ③ 小部件 = 3 列×2 行方卡（迷你组件拼贴，标题在卡下）。
   Widget _feed(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final w = (c.maxWidth - 12) / 2;
-        final children = <Widget>[];
-        for (var i = 0; i < 10; i++) {
-          children.add(
-            SizedBox(
-              width: w,
-              height: 168.0 + (i % 3) * 26, // 高度错落 → 双列错位观感
-              child: AnimatedBuilder(
-                animation: _enterC,
-                builder: (_, __) => SpringEnter(
-                  elapsedMs: _enterC.value * 1800,
-                  index: i,
-                  child: ThemeCard(index: i),
-                ),
-              ),
-            ),
-          );
-        }
+        final w = (c.maxWidth - 20) / 3; // 3 列，间距 10
+        Widget enter(int i, Widget child) => AnimatedBuilder(
+          animation: _enterC,
+          builder: (_, __) => SpringEnter(
+            elapsedMs: _enterC.value * 1800,
+            index: i,
+            child: child,
+          ),
+        );
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const BannerCard(),
             const SizedBox(height: 12),
-            Wrap(spacing: 12, runSpacing: 12, children: children),
+            // ① 推荐：3 列锁屏高卡
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (var i = 0; i < _locks.length; i++)
+                  SizedBox(
+                    width: w,
+                    child: enter(i, _LockCard(_locks[i], w)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // ② 分区头
+            Row(
+              children: [
+                const Text(
+                  '精选小部件',
+                  style: TextStyle(
+                    fontSize: 17.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xE6000000),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '查看更多',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: const Color(0x8A000000),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: Color(0x8A000000),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // ③ 小部件：3 列 × 2 行
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (var i = 0; i < _widgets.length; i++)
+                  SizedBox(
+                    width: w,
+                    child: enter(_locks.length + i, _WidgetCard(_widgets[i], w)),
+                  ),
+              ],
+            ),
             const SizedBox(height: 24),
           ],
         );
@@ -352,6 +394,287 @@ class _HomePageState extends State<HomePage>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 卡片素材：标题 + 渐变 + 迷你组件文案（官方截图取值）。
+class _ThemeArt {
+  const _ThemeArt(this.title, this.colors, this.chips);
+
+  final String title;
+  final List<Color> colors;
+  final List<String> chips;
+}
+
+/// 推荐：3 张锁屏高卡（9:16 构图）。
+const _locks = <_ThemeArt>[
+  _ThemeArt(
+    '罗小黑 清凉泳池',
+    [Color(0xFF9AD8F0), Color(0xFF3E8FD0)],
+    ['02:36', '10月14日'],
+  ),
+  _ThemeArt(
+    '爱你时有风',
+    [Color(0xFF7D8F70), Color(0xFF2E3A2C)],
+    ['02:36', '10月14日'],
+  ),
+  _ThemeArt(
+    'AP26 超级玻璃',
+    [Color(0xFFCFE3FA), Color(0xFF4A78C0)],
+    ['02:36', '10月14日'],
+  ),
+];
+
+/// 小部件：3×2 方卡（前 3 个照抄官方截图标题）。
+const _widgets = <_ThemeArt>[
+  _ThemeArt(
+    '蜘蛛侠 酷感雨雾',
+    [Color(0xFF4A4A4E), Color(0xFFB03030)],
+    ['12:37', '55 步', '22°', '08:08'],
+  ),
+  _ThemeArt(
+    'MyCar',
+    [Color(0xFF1C1C1E), Color(0xFF4A4A4E)],
+    ['22:34', '12:37', '56%', '120km'],
+  ),
+  _ThemeArt(
+    '线条小狗 春日…',
+    [Color(0xFFF7E8F2), Color(0xFFBFE5CE)],
+    ['08:08', '12:37', '55 步', '晚安'],
+  ),
+  _ThemeArt(
+    '组件合集',
+    [Color(0xFFDCEBFB), Color(0xFF7FA8E0)],
+    ['24', '12:37', '85%', '晴'],
+  ),
+  _ThemeArt(
+    '日历美化',
+    [Color(0xFFFDEDEC), Color(0xFFE07060)],
+    ['新增', '周五', '10:00', '会议'],
+  ),
+  _ThemeArt(
+    '考勤打卡',
+    [Color(0xFFFFF3E0), Color(0xFFF0A030)],
+    ['75%', '考勤打卡', '18:00', '下班'],
+  ),
+];
+
+/// 锁屏高卡：渐变 + 顶部状态胶囊 + 大时钟（上 1/3 构图）+ 底部快捷圆，
+/// 标题在卡下。
+class _LockCard extends StatelessWidget {
+  const _LockCard(this.art, this.w);
+
+  final _ThemeArt art;
+  final double w;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = w * 1.78;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: art.colors,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // 顶部状态胶囊
+              Positioned(
+                top: 9,
+                left: 9,
+                right: 9,
+                child: Row(
+                  children: [
+                    Container(
+                      width: w * 0.22,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0x33FFFFFF),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      width: w * 0.16,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0x33FFFFFF),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 大时钟区（上 1/3，锁屏构图）
+              Positioned(
+                top: h * 0.28,
+                left: 6,
+                right: 6,
+                child: Column(
+                  children: [
+                    Text(
+                      art.chips[1],
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: Color(0xB3FFFFFF),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      art.chips[0],
+                      style: TextStyle(
+                        fontSize: w * 0.30,
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white,
+                        letterSpacing: -1,
+                        height: 1.05,
+                        shadows: const [
+                          Shadow(color: Color(0x40000000), blurRadius: 8),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 底部快捷圆
+              Positioned(
+                bottom: 12,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (final ic in [
+                      Icons.flash_on,
+                      Icons.camera_alt_outlined,
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: const BoxDecoration(
+                            color: Color(0x33FFFFFF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(ic, size: 14, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          art.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+            color: Color(0xE6000000),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 小部件方卡：渐变底 + 2×2 迷你组件拼贴，标题在卡下。
+class _WidgetCard extends StatelessWidget {
+  const _WidgetCard(this.art, this.w);
+
+  final _ThemeArt art;
+  final double w;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = w * 1.25;
+    final tw = (w - 16 - 6) / 2;
+    final th = (h - 16 - 6) / 2;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: w,
+          height: h,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: art.colors,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < art.chips.length; i++)
+                Container(
+                  width: tw,
+                  height: th,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: i.isEven
+                        ? const Color(0xB3FFFFFF)
+                        : const Color(0x59000000),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    art.chips[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: i.isEven
+                          ? const Color(0xE6000000)
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          art.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+            color: Color(0xE6000000),
+          ),
+        ),
+      ],
     );
   }
 }
