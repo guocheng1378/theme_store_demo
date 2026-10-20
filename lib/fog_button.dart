@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
+import 'package/flutter/physics.dart';
 
 /// 雾面按钮 —— 小米柔光玻璃（2026-10-20 15:31 评审
 /// “还是黑的没有雾，能把箭头去掉吗”）：
@@ -16,6 +16,12 @@ import 'package:flutter/physics.dart';
 ///   雾化感觉没了”）：球底两层黑投影 0x52/0x2E 会在奶白雾面下压出
 ///   黑环，雾感被阴影吃掉；去掉后球体只剩雾纱+柔光+细白亮边，
 ///   纯雾化悬浮，无任何黑色投影层。
+/// · **磨砂颗粒层**（2026-10-20 21:10 评审“按钮没有磨砂感”）：
+///   雾纱里叠一层固定种子的程序噪声（白/黑细点 @0x1A/@0x14，320 点，
+///   点位不随帧变不闪烁），奶白雾底同时 0x66→0x7F（40%→50%，
+///   滚动加浓 +0x14 封顶 ~58%）—— 纯色/浅色背景后也能读出
+///   砂面颗粒，不再是一颗光滑圆点；点层在外层 ShaderMask 内，
+///   随雾纱一同羽化到边。
 /// · 亮 = 拎起 × (0.6 + 0.4×接近度)：一滚就 60% 亮，50px 拉满；
 ///   拎起 = px>4 立即弹 -16px（~0.3s 微回弹）；慢雾弹簧 40-130px
 ///   只调浓淡。
@@ -97,8 +103,8 @@ class _FogButtonState extends State<FogButton>
               (lift * (0.6 + 0.4 * prox)).clamp(0.0, 1.0).toDouble();
           final double fog = _c.value.clamp(0.0, 1.0).toDouble();
           final double glow = bright * (1 - 0.5 * fog);
-          // 常驻奶白雾 0x66（40%），滚动加浓 +0x1A（→ ~50% 封顶）
-          final double milk = 0.40 + 0.10 * fog;
+          // 常驻奶白雾 0x7F（50%），滚动加浓 +0x14（→ ~58% 封顶）
+          final double milk = 0.50 + 0.08 * fog;
 
           return SizedBox(
             width: s + 40,
@@ -224,6 +230,15 @@ class _FogButtonState extends State<FogButton>
                                                             0.30 * bright,
                                                           ),
                                                         ),
+                                                        // 磨砂砂点：固定种子
+                                                        // 程序噪声，画进雾纱层
+                                                        // 随 ShaderMask 羽化。
+                                                        const Positioned.fill(
+                                                          child: CustomPaint(
+                                                            painter:
+                                                                _GrainPainter(),
+                                                          ),
+                                                        ),
                                                       ],
                                                     ),
                                                   ),
@@ -326,4 +341,41 @@ class _GlassRimPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GlassRimPainter old) =>
       old.bright != bright || old.fog != fog;
+}
+
+/// 磨砂砂点（21:10 评审“按钮没有磨砂感”）：
+/// 固定种子随机点位（点列表只生成一次，不会逐帧闪），
+/// 白点 0x1A + 黑点 0x14 各半，近圆边丢弃，
+/// 画在雾纱层里由 ShaderMask 羽化到边——平色背景也能读出颗粒。
+class _GrainPainter extends CustomPainter {
+  const _GrainPainter();
+
+  /// 归一化点位（[-1,1]²，单位圆内使用）；固定种子，与尺寸无关。
+  static final List<Offset> _specks = () {
+    final rnd = math.Random(20261020);
+    return List.generate(320, (_) {
+      return Offset(rnd.nextDouble() * 2 - 1, rnd.nextDouble() * 2 - 1);
+    });
+  }();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final r = size.shortestSide / 2;
+    final lit = Paint()..color = const Color(0x1AFFFFFF);
+    final dark = Paint()..color = const Color(0x14000000);
+    for (var i = 0; i < _specks.length; i++) {
+      final p = _specks[i];
+      if (p.dx * p.dx + p.dy * p.dy > 0.94) continue;
+      final off = Offset(c.dx + p.dx * r, c.dy + p.dy * r);
+      if (i.isEven) {
+        canvas.drawCircle(off, 1.2, lit);
+      } else {
+        canvas.drawCircle(off, 0.8, dark);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GrainPainter old) => false;
 }
