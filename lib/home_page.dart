@@ -127,9 +127,11 @@ class _HomePageState extends State<HomePage>
   /// 羽化历史：44px（模糊被吃在 Tab 区，内容硬穿）→ 16px（21:30，
   /// Tab 底下有糊有雾，但 21:51 截图“雾化没做好”：过渡太急 +
   /// 奶白太淡、Banner 颜色穿透成色板）→ 24px（本笔：chip 已自带
-  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80→0.90、
-  /// 带 alpha 0.651→0.75→0.92（有效白雾 0.36→0.60→0.83，
-  /// 00:20 评审“雾不够密”：加浓一档）。
+  /// 玻璃不怕羽化落在胶囊区，底缘过渡更柔）；奶白 0.55→0.80→0.90→0.62、
+  /// 带 alpha 0.651→0.75→0.92（有效白雾 0.36→0.60→0.83→0.57，
+  /// 00:20 评审“雾不够密”加浓 → 00:21 评审“要密还要透，
+  /// 能透界面滑过的色”：奶白回落留透色 + 白 softLight 提密度、
+  /// 模糊 30→46 把形化成色雾）。
   /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
@@ -154,7 +156,9 @@ class _HomePageState extends State<HomePage>
                 ],
               ).createShader(rect),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                // 模糊 30→46：把滑过的内容化成纯色雾，形不可辨但色透得上来
+                // （00:21 评审“要密还要透，能透界面滑过的色”）
+                filter: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
                 // 不包 Stack：Stack 默认 fit=loose 会放开非定位子级约束，
                 // CustomPaint(无子级) size 被收成 0×0——tint（奶白+软光）
                 // 整层不画，只剩模糊，Banner 紫色直接穿透（23:29 截图）。
@@ -760,20 +764,26 @@ class _BandTintPainter extends CustomPainter {
 
   final double alpha;
 
-  /// 雾面着色：奶白提亮层 + 极轻灰软光层。
-  /// 奶白 0.55→0.80→0.90、带 alpha 0.651→0.75→0.92
-  /// （21:51 评审“雾化没做好”→00:20 评审“雾不够密”：
-  /// 有效白雾 0.36→0.60→0.83，顶栏读作奶白雾面玻璃）；
-  /// 灰 softLight 强度保持 0.30 保留玻璃深度。
+  /// 雾面着色三层：奶白 normal（留透色）+ 白 softLight（提密度
+  /// 不吞色）+ 灰 softLight（玻璃深度 0.30 不变）。
+  /// 00:21 评审“要密还要透，能透界面滑过的色”：奶白 0.90→0.62
+  /// 让滑过的界面色以淡彩透上，密度改由白 softLight 0.55 扛。
   @override
   void paint(Canvas canvas, Size size) {
     if (alpha <= 0.005 || size.isEmpty) return;
     final rect = Offset.zero & size;
-    // 1) 奶白雾：normal 白层，浅色底上不再发黑
+    // 1) 奶白雾：normal 白层，压色但留透——滑过的界面色仍读得出
+    //    （0.90→0.62，00:21 评审“要密还要透，能透界面滑过的色”）
     final milk = Paint()
-      ..color = Colors.white.withValues(alpha: 0.90 * alpha);
+      ..color = Colors.white.withValues(alpha: 0.62 * alpha);
     canvas.drawRect(rect, milk);
-    // 2) 玻璃深度：极轻灰 softLight（强度 0.30）
+    // 2) 增密提亮：白 softLight——只提亮、不吞色，雾读作密，
+    //    底下颜色仍以淡彩透上来（密而不闷的主力层）
+    final lift = Paint()
+      ..blendMode = BlendMode.softLight
+      ..color = Colors.white.withValues(alpha: 0.55 * alpha);
+    canvas.drawRect(rect, lift);
+    // 3) 玻璃深度：极轻灰 softLight（强度 0.30）
     const base = Color(0xFF6B6B6B);
     final depth = Paint()
       ..blendMode = BlendMode.softLight
