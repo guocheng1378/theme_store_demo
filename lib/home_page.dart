@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
+import 'package/flutter/physics.dart';
 
 import 'cards.dart';
 import 'capsule_button.dart';
@@ -21,9 +21,8 @@ class _HomePageState extends State<HomePage>
     with TickerProviderStateMixin {
   final _sc = ScrollController();
   final _fabPx = ValueNotifier<double>(0);
-  // 全按钮统一高亮信号（2026-10-20 15:35 “靠近按钮按钮高亮，是所有按钮；
-  // 是界面快穿过”）：界面内容快穿过谁，谁就高亮 —— 用接近度
-  // clamp(px/50) 驱动搜索胶囊、chips、悬浮球的白描边柔光，回顶熄灭。
+  // 全按钮统一高亮信号：界面内容快穿过谁，谁就高亮
+  // （接近度 clamp(px/50) 驱动搜索/chips/悬浮球，回顶熄灭）。
   final _prox = ValueNotifier<double>(0);
 
   late final AnimationController _tabC = AnimationController(
@@ -112,21 +111,21 @@ class _HomePageState extends State<HomePage>
             ),
           ),
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
-          // 悬浮球：带底 12px 缝下方，内容从缝里穿过
-          Positioned(
-            top: headerExtent - 8,
-            right: 16,
-            child: FogButton(
-              scrollListenable: _fabPx,
-              onTap: _toTop,
-            ),
-          ),
         ],
       ),
       bottomNavigationBar: _bottomBar(),
+      // 回顶部按钮（2026-10-20 15:40 “回顶部不是应该放下边吗”）：
+      // 挪回右下角（导航栏上方，系统 endFloat 标准位）。
+      // 素玻璃球（箭头已删）+ 常驻奶白雾 + 接近度高亮 + 拎起时序。
+      floatingActionButton: FogButton(
+        scrollListenable: _fabPx,
+        onTap: _toTop,
+      ),
     );
   }
 
+  /// 雾面带：恒定雾化 + 模糊/混色底部 44px 整体羽化；
+  /// 搜索/chips 在羽化层之上保持清晰；Stack 高度由 chips 列定义（有界）。
   Widget _fogHeader() {
     return ClipRect(
       child: Stack(
