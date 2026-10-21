@@ -169,6 +169,11 @@ class _HomePageState extends State<HomePage>
     final headerExtent = topInset + _kHeaderExtent;
     return Scaffold(
       backgroundColor: const Color(0xFFF4F4F6),
+      // ① 内容穿过栏底（12:52“悬浮栏和主题不一样”的根因）：
+      //    bottomNavigationBar 默认把 body 顶上去，栏后的 BackdropFilter
+      //    只采到纯色 #F4F4F6 —— 没有内容可模糊、可随色，玻璃永远是死的。
+      //    extendBody 让 body 延伸到栏下，内容真的从栏底穿过。
+      extendBody: true,
       body: Stack(
         children: [
           Positioned.fill(
@@ -195,11 +200,13 @@ class _HomePageState extends State<HomePage>
                     ),
                     slivers: [
                       SliverPadding(
+                        // bottom 16→96：extendBody 后末项会走到栏下，
+                        // 需让出栏高（8+61.3+6≈76）+ 呼吸位，否则被压住。
                         padding: EdgeInsets.fromLTRB(
                           16,
                           headerExtent + 14,
                           16,
-                          16,
+                          96,
                         ),
                         sliver: SliverToBoxAdapter(child: _feed(context)),
                       ),
@@ -532,12 +539,16 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 悬浮栏（底部导航条）——07:49 评审“把悬浮栏也做一下”：
-  /// 材质按同一套主题真值改：填充从白 0.60+0.30h（几乎实心）退到
-  /// 薄纱 0.45+0.15h，内叠 ColorBlendToken.l 三层混色
-  /// （SPECS §五，与雾面按钮同配方，强度随接近度 0.40→0.70 爬升）；
-  /// 真模糊 24、接近度白描边/光晕、托底软影保持——玻璃随底色走，
-  /// 不再是一条“白塑料”。
+  /// 悬浮栏（底部导航条）——07:49 评审“把悬浮栏也做一下”
+  /// + 12:52 修复“和主题不一样”，三处对齐主题真值：
+  /// ① 内容穿过栏底由 Scaffold.extendBody 负责（见 build 注释）——
+  ///    栏后的模糊终于采到真内容，玻璃随底色走；
+  /// ② 白底 0.45+0.15h（几乎实心白塑料）退到薄纱 0.24+0.12h，
+  ///    同雾面按钮“不再用白底盖住混色层”；
+  /// ③ 主色层接 _fogTint 动态取色 + 模糊加饱和矩阵 1.75
+  ///    （与顶部雾带同一套配方）——栏跟着主题/穿过的内容变色。
+  /// 内叠 ColorBlendToken.l 三层混色（SPECS §五，强度随接近度
+  /// 0.40→0.70 爬升）与接近度白描边/光晕、托底软影保持。
   Widget _bottomBar() {
     const icons = [
       Icons.format_paint,
@@ -549,7 +560,8 @@ class _HomePageState extends State<HomePage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
       child: AnimatedBuilder(
-        animation: _prox,
+        // 双信号：接近度高亮 + 动态雾色（主题变了栏也变）
+        animation: Listenable.merge([_prox, _fogTint]),
         builder: (context, _) {
           final h = _prox.value;
           return DecoratedBox(
@@ -575,17 +587,31 @@ class _HomePageState extends State<HomePage>
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                // 真模糊 24 + 饱和矩阵 1.75（同雾带）：穿过的内容色相更浓，
+                // 栏才染得出色，不再是中性灰
+                filter: ImageFilter.compose(
+                  outer: const ColorFilter.matrix(<double>[
+                    1.59025, -0.53625, -0.054, 0, 0,
+                    -0.15975, 1.21375, -0.054, 0, 0,
+                    -0.15975, -0.53625, 1.696, 0, 0,
+                    0, 0, 0, 1, 0,
+                  ]),
+                  inner: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                ),
                 child: Material(
-                  color: Colors.white.withOpacity(0.45 + 0.15 * h),
+                  // ② 白退纱：0.45+0.15h → 0.24+0.12h，混色层主导观感
+                  color: Colors.white.withValues(alpha: 0.24 + 0.12 * h),
                   borderRadius: BorderRadius.circular(24),
                   clipBehavior: Clip.antiAlias,
                   child: Stack(
                     children: [
-                      // 悬浮栏真值三层混色（同雾面按钮配方）
+                      // 悬浮栏真值三层混色（同雾面按钮配方）+ 动态雾色主层
                       Positioned.fill(
                         child: CustomPaint(
-                          painter: _BarMixPainter(0.40 + 0.30 * h),
+                          painter: _BarMixPainter(
+                            0.40 + 0.30 * h,
+                            _fogTint.value,
+                          ),
                         ),
                       ),
                       SizedBox(
@@ -960,18 +986,31 @@ class _BandTintPainter extends CustomPainter {
 }
 
 /// 悬浮栏（底部导航条）真值三层混色（SPECS §五 ColorBlendToken.l，
-/// 07:49 评审“把悬浮栏也做一下”）：与雾面按钮同配方，
-/// v 随接近度 0.40→0.70 爬升；层1 PLUS_DARKER 同样降级 darken
-/// （Flutter 无 plusDarker 枚举，见 fog_button 注释）。
+/// 07:49 评审“把悬浮栏也做一下” + 12:52 修复“和主题不一样”）：
+/// ①层0 动态雾色主层（_fogTint）——与雾带同一主色层，栏跟着主题变；
+/// ②③④ SPECS 三层混色，v 随接近度 0.40→0.70 爬升；
+/// 层1 PLUS_DARKER 同样降级 darken（Flutter 无 plusDarker 枚举，
+/// 见 fog_button 注释）。
+/// 之前栏底是死灰（extendBody 未开）+ 白 0.45 盖死 + 无 tint，
+/// 只有中性灰 luminosity 层在起作用 → 一条灰塑料。
 class _BarMixPainter extends CustomPainter {
-  _BarMixPainter(this.v);
+  _BarMixPainter(this.v, this.tint);
 
   final double v;
+
+  /// 动态雾色主层（同 _BandTintPainter 的 tint 来源）。
+  final Color tint;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (v <= 0.01) return;
     final rect = Offset.zero & size;
+    // 0) 主色层：动态雾色，强度随接近度走（0.42 与雾带同权重）
+    canvas.drawRect(
+      rect,
+      Paint()..color = tint.withValues(alpha: 0.42 * v),
+    );
+    // SPECS 三层：l 黑 darken / #6C6C6C luminosity / #060606 softLight
     canvas.drawRect(
       rect,
       Paint()
@@ -993,5 +1032,5 @@ class _BarMixPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BarMixPainter old) => old.v != v;
+  bool shouldRepaint(_BarMixPainter old) => old.v != v || old.tint != tint;
 }
