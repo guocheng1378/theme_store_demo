@@ -166,7 +166,10 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
     final headerExtent = topInset + _kHeaderExtent;
+    // 底栏下边距取手势条 inset（至少 10）：见 _bottomBar 注释
+    final barBottomGap = math.max(bottomInset, 10.0) + 6;
     return Scaffold(
       backgroundColor: const Color(0xFFF4F4F6),
       // ① 内容穿过栏底（12:52“悬浮栏和主题不一样”的根因）：
@@ -200,13 +203,14 @@ class _HomePageState extends State<HomePage>
                     ),
                     slivers: [
                       SliverPadding(
-                        // bottom 16→96：extendBody 后末项会走到栏下，
-                        // 需让出栏高（8+61.3+6≈76）+ 呼吸位，否则被压住。
+                        // 96 → 96+barBottomGap：extendBody 后末项会走到
+                        // 栏下，需让出整栏高（8+61.3+6≈76）+ 底部缝隙
+                        // （手势条+6）+ 呼吸位，否则被压在栏/手势条后面。
                         padding: EdgeInsets.fromLTRB(
                           16,
                           headerExtent + 14,
                           16,
-                          96,
+                          96 + barBottomGap,
                         ),
                         sliver: SliverToBoxAdapter(child: _feed(context)),
                       ),
@@ -219,7 +223,7 @@ class _HomePageState extends State<HomePage>
           Positioned(top: 0, left: 0, right: 0, child: _fogHeader()),
         ],
       ),
-      bottomNavigationBar: _bottomBar(),
+      bottomNavigationBar: _bottomBar(context),
       // 回顶部按钮：右下角（导航栏上方，系统 endFloat 标准位）。
       // 素玻璃球（箭头已删）+ 常驻奶白雾 + 接近度高亮 + 拎起时序。
       floatingActionButton: FogButton(
@@ -547,9 +551,19 @@ class _HomePageState extends State<HomePage>
   ///    同雾面按钮“不再用白底盖住混色层”；
   /// ③ 主色层接 _fogTint 动态取色 + 模糊加饱和矩阵 1.75
   ///    （与顶部雾带同一套配方）——栏跟着主题/穿过的内容变色。
+  ///
+  /// 13:37 三条反馈的修复：
+  /// · 太贴边/没悬浮：extendBody 后 Scaffold 不再替底栏垫系统底部
+  ///   安全区，栏掉到屏幕最底（下圆角被切、四周无缝）→ 自己补
+  ///   bottomGap = max(手势条 inset, 10) + 6，侧边 8 → 12，
+  ///   栏四周留出可见缝隙，阴影才有地方投，重新“浮”起来；
+  ///   基础托影同步 0x14000000/16 → 0x1F000000/18/offset(0,6)。
+  /// · 没有按下效果：默认 splash 深色 0x1F000000，压在已变暗的玻璃
+  ///   层上看不见 → tab 项改白系 splash/highlight，玻璃上起白涟漪。
+  ///
   /// 内叠 ColorBlendToken.l 三层混色（SPECS §五，强度随接近度
   /// 0.40→0.70 爬升）与接近度白描边/光晕、托底软影保持。
-  Widget _bottomBar() {
+  Widget _bottomBar(BuildContext context) {
     const icons = [
       Icons.format_paint,
       Icons.dashboard,
@@ -557,8 +571,10 @@ class _HomePageState extends State<HomePage>
       Icons.person_rounded,
     ];
     const labels = ['首页', '分类', '每日精选', '我的'];
+    // 底部留缝：手势条 inset（没有就至少 10）+ 原 6 呼吸位
+    final bottomGap = math.max(MediaQuery.paddingOf(context).bottom, 10.0) + 6;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      padding: EdgeInsets.fromLTRB(12, 8, 12, bottomGap),
       child: AnimatedBuilder(
         // 双信号：接近度高亮 + 动态雾色（主题变了栏也变）
         animation: Listenable.merge([_prox, _fogTint]),
@@ -571,10 +587,11 @@ class _HomePageState extends State<HomePage>
                 color: Colors.white.withOpacity(0.30 + 0.50 * h),
               ),
               boxShadow: [
+                // 基础托影加重（13:37“没悬浮”）：悬浮感靠投影离地
                 const BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 16,
-                  offset: Offset(0, 4),
+                  color: Color(0x1F000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 6),
                 ),
                 if (h > 0.01)
                   BoxShadow(
@@ -622,6 +639,14 @@ class _HomePageState extends State<HomePage>
                               Expanded(
                                 child: InkWell(
                                   onTap: () => setState(() => _nav = i),
+                                  // 没有按下效果（13:37）：默认深色水波
+                                  // 压在变暗的玻璃上根本看不见 → 改白系
+                                  borderRadius: BorderRadius.circular(24),
+                                  splashColor:
+                                      Colors.white.withOpacity(0.38),
+                                  highlightColor:
+                                      Colors.white.withOpacity(0.16),
+                                  hoverColor: Colors.white.withOpacity(0.12),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
